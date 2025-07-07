@@ -29,20 +29,8 @@ export default function TeamLeadLayout() {
   useEffect(() => {
     if (!isLoading && user != null) {
       if (isAuthenticated && user) {
-        if (user.role !== 'team_lead' && user.role !== 'super_admin') {
-          switch (user.role) {
-            case 'salesman':
-              setRedirectPath('/(salesman)');
-              break;
-            case 'call_operator':
-              setRedirectPath('/(call_operator)');
-              break;
-            case 'technician':
-              setRedirectPath('/(technician)');
-              break;
-            default:
-              setRedirectPath('/login');
-          }
+        if (user.role !== 'team_lead') {
+          setRedirectPath('/login');
           setShouldRedirect(true);
         }
       } else if (!isAuthenticated) {
@@ -75,7 +63,7 @@ export default function TeamLeadLayout() {
     return null;
   }
 
-  if (!isAuthenticated || !user || (user.role !== 'team_lead' && user.role !== 'super_admin')) {
+  if (!isAuthenticated || !user || user.role !== 'team_lead') {
     return null;
   }
 

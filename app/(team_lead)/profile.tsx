@@ -7,6 +7,7 @@ import {
   Alert,
   Switch,
   StyleSheet,
+  Platform,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
@@ -41,7 +42,12 @@ export default function TeamLeadProfile() {
   const [darkMode, setDarkMode] = useState(false);
   const [emailAlerts, setEmailAlerts] = useState(true);
 
-  if (!user) return null;
+  if (!user || user.role !== 'team_lead') {
+    if (typeof window !== 'undefined') {
+      router.replace('/login');
+    }
+    return null;
+  }
 
   const transitLeads = getTransitLeads();
   const myLeads = getUserLeads(user.id);
@@ -52,14 +58,36 @@ export default function TeamLeadProfile() {
   });
 
   const handleLogout = () => {
-    Alert.alert(
-      'Logout',
-      'Are you sure you want to logout?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Logout', style: 'destructive', onPress: signOut },
-      ]
-    );
+    const doLogout = async () => {
+      console.log('LOGOUT: doLogout called');
+      try {
+        await signOut();
+        console.log('LOGOUT: signOut finished');
+        router.replace('/login');
+      } catch (error) {
+        console.error('LOGOUT ERROR:', error);
+        if (Platform.OS !== 'web') {
+          Alert.alert('Error', 'Failed to logout. Please try again.');
+        } else {
+          window.alert('Failed to logout. Please try again.');
+        }
+      }
+    };
+
+    if (Platform.OS === 'web') {
+      if (window.confirm('Are you sure you want to logout?')) {
+        doLogout();
+      }
+    } else {
+      Alert.alert(
+        'Logout',
+        'Are you sure you want to logout?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Logout', style: 'destructive', onPress: () => { doLogout(); } },
+        ]
+      );
+    }
   };
 
   const SettingItem = ({

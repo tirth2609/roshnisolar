@@ -64,7 +64,10 @@ export default function SuperAdminProfileScreen() {
   const [fileName, setFileName] = useState('');
   const [isImporting, setIsImporting] = useState(false);
 
-  if (!user) {
+  if (!user || user.role !== 'super_admin') {
+    if (typeof window !== 'undefined') {
+      router.replace('/login');
+    }
     return null;
   }
 
@@ -83,14 +86,36 @@ export default function SuperAdminProfileScreen() {
   };
 
   const handleLogout = () => {
-    Alert.alert(
-      'Logout',
-      'Are you sure you want to logout?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Logout', style: 'destructive', onPress: signOut },
-      ]
-    );
+    const doLogout = async () => {
+      console.log('LOGOUT: doLogout called');
+      try {
+        await signOut();
+        console.log('LOGOUT: signOut finished');
+        router.replace('/login');
+      } catch (error) {
+        console.error('LOGOUT ERROR:', error);
+        if (Platform.OS !== 'web') {
+          Alert.alert('Error', 'Failed to logout. Please try again.');
+        } else {
+          window.alert('Failed to logout. Please try again.');
+        }
+      }
+    };
+
+    if (Platform.OS === 'web') {
+      if (window.confirm('Are you sure you want to logout?')) {
+        doLogout();
+      }
+    } else {
+      Alert.alert(
+        'Logout',
+        'Are you sure you want to logout?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Logout', style: 'destructive', onPress: () => { doLogout(); } },
+        ]
+      );
+    }
   };
 
   const handleExportData = () => {

@@ -20,22 +20,8 @@ export default function SuperAdminLayout() {
     // Only check after authentication is loaded and user is not null/undefined
     if (!isLoading && user != null) {
       if (isAuthenticated && user) {
-        if (user.role !== 'super_admin' && user.role !== 'team_lead') {
-          // Set redirect path instead of immediately navigating
-          console.log('SuperAdminLayout: redirecting, user.role =', user.role);
-          switch (user.role) {
-            case 'salesman':
-              setRedirectPath('/(salesman)');
-              break;
-            case 'call_operator':
-              setRedirectPath('/(call_operator)');
-              break;
-            case 'technician':
-              setRedirectPath('/(technician)');
-              break;
-            default:
-              setRedirectPath('/login');
-          }
+        if (user.role !== 'super_admin') {
+          setRedirectPath('/login');
           setShouldRedirect(true);
         }
       } else if (!isAuthenticated) {
@@ -72,7 +58,7 @@ export default function SuperAdminLayout() {
   }
 
   // Don't render if user is not authenticated or doesn't have proper role
-  if (!isAuthenticated || !user || (user.role !== 'super_admin' && user.role !== 'team_lead')) {
+  if (!isAuthenticated || !user || user.role !== 'super_admin') {
     return null;
   }
 

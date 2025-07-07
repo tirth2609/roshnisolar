@@ -56,8 +56,12 @@ import {
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system';
 // import * as Sharing from 'expo-sharing';
+import { ViewStyle } from 'react-native';
 
 const { width } = Dimensions.get('window');
+
+// Utility: isWebLargeScreen
+const isWebLargeScreen = Platform.OS === 'web' && width >= 900;
 
 export default function SuperAdminDashboard() {
   const { user } = useAuth();
@@ -393,6 +397,15 @@ export default function SuperAdminDashboard() {
     );
   }
 
+  const kpiCardWidth = isWebLargeScreen ? '23%' : '48%'; // 4 per row on web, 2 per row on mobile
+  const actionCardWidth = isWebLargeScreen ? '23%' : '48%';
+  const gridStyle = isWebLargeScreen
+    ? { flexDirection: 'row' as const, flexWrap: 'wrap' as const, justifyContent: 'space-between' as const }
+    : styles.grid2col;
+
+  const screenWidth = Dimensions.get('window').width;
+  const isSmallScreen = screenWidth < 700;
+
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       {/* Header */}
@@ -443,9 +456,9 @@ export default function SuperAdminDashboard() {
         <FadeInView delay={400} duration={600}>
           <View style={styles.kpiContainer}>
             <Text style={[styles.sectionTitle, { color: theme.text }]}>Key Performance Indicators</Text>
-            <View style={styles.grid2col}>
+            <View style={gridStyle}>
               {kpiCards.map((kpi, index) => (
-                <AnimatedCard key={kpi.title} index={index} style={styles.kpiCard}>
+                <AnimatedCard key={kpi.title} index={index} style={[styles.kpiCard, { width: kpiCardWidth }]}>
                   <View style={[styles.kpiIcon, { backgroundColor: kpi.bgColor }]}>
                     <kpi.icon size={24} color={kpi.color} />
                   </View>
@@ -465,57 +478,95 @@ export default function SuperAdminDashboard() {
         <SlideInView delay={600} duration={600} direction="up">
           <View style={styles.actionsContainer}>
             <Text style={[styles.sectionTitle, { color: theme.text }]}>Quick Actions</Text>
-            <View style={styles.grid2col}>
-              <AnimatedCard index={0} style={styles.actionCard}>
-                <TouchableOpacity
-                  style={[styles.actionButton, { backgroundColor: theme.primary }]}
-                  onPress={() => router.push('/(super_admin)/users')}
-                >
-                  <UserPlus size={24} color={theme.textInverse} />
-                  <Text style={[styles.actionText, { color: theme.textInverse }]}>Manage Users</Text>
-                </TouchableOpacity>
-              </AnimatedCard>
-
-              <AnimatedCard index={1} style={styles.actionCard}>
-                <TouchableOpacity
-                  style={[styles.actionButton, { backgroundColor: theme.success }]}
-                  onPress={() => setShowBulkImportModal(true)}
-                >
-                  <Upload size={24} color={theme.textInverse} />
-                  <Text style={[styles.actionText, { color: theme.textInverse }]}>Bulk Import</Text>
-                </TouchableOpacity>
-              </AnimatedCard>
-
-              <AnimatedCard index={2} style={styles.actionCard}>
-                <TouchableOpacity
-                  style={[styles.actionButton, { backgroundColor: theme.warning }]}
-                  onPress={() => router.push('/(super_admin)/lead-assignment')}
-                >
-                  <Target size={24} color={theme.textInverse} />
-                  <Text style={[styles.actionText, { color: theme.textInverse }]}>Lead Assignment</Text>
-                </TouchableOpacity>
-              </AnimatedCard>
-
-              <AnimatedCard index={3} style={styles.actionCard}>
-                <TouchableOpacity
-                  style={[styles.actionButton, { backgroundColor: theme.info }]}
-                  onPress={() => router.push('/(super_admin)/work-tracking')}
-                >
-                  <BarChart3 size={24} color={theme.textInverse} />
-                  <Text style={[styles.actionText, { color: theme.textInverse }]}>Analytics</Text>
-                </TouchableOpacity>
-              </AnimatedCard>
-
-              <AnimatedCard index={4} style={styles.actionCard}>
-                <TouchableOpacity
-                  style={[styles.actionButton, { backgroundColor: theme.info }]}
-                  onPress={exportLeadsToCSV}
-                >
-                  <Download size={24} color={theme.textInverse} />
-                  <Text style={[styles.actionText, { color: theme.textInverse }]}>Export Leads</Text>
-                </TouchableOpacity>
-              </AnimatedCard>
-            </View>
+            {isSmallScreen ? (
+              <View style={styles.quickActionsGridSmall}>
+                {[0,1,2,3,4].map(idx => (
+                  <AnimatedCard
+                    key={idx}
+                    style={{
+                      width: '48%',
+                      backgroundColor: '#fff',
+                      padding: 16,
+                      borderRadius: 16,
+                      marginBottom: 16,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      elevation: 2,
+                      shadowColor: '#000',
+                      shadowOffset: { width: 0, height: 2 },
+                      shadowOpacity: 0.08,
+                      shadowRadius: 4,
+                    }}
+                  >
+                    {idx === 0 && (
+                      <TouchableOpacity style={[styles.actionButton, { backgroundColor: theme.primary }]} onPress={() => router.push('/(super_admin)/users')}>
+                        <UserPlus size={24} color={theme.textInverse} />
+                        <Text style={[styles.actionText, { color: theme.textInverse }]}>Manage Users</Text>
+                      </TouchableOpacity>
+                    )}
+                    {idx === 1 && (
+                      <TouchableOpacity style={[styles.actionButton, { backgroundColor: theme.success }]} onPress={() => setShowBulkImportModal(true)}>
+                        <Upload size={24} color={theme.textInverse} />
+                        <Text style={[styles.actionText, { color: theme.textInverse }]}>Bulk Import</Text>
+                      </TouchableOpacity>
+                    )}
+                    {idx === 2 && (
+                      <TouchableOpacity style={[styles.actionButton, { backgroundColor: theme.warning }]} onPress={() => router.push('/(super_admin)/lead-assignment')}>
+                        <Target size={24} color={theme.textInverse} />
+                        <Text style={[styles.actionText, { color: theme.textInverse }]}>Lead Assignment</Text>
+                      </TouchableOpacity>
+                    )}
+                    {idx === 3 && (
+                      <TouchableOpacity style={[styles.actionButton, { backgroundColor: theme.info }]} onPress={() => router.push('/(super_admin)/work-tracking')}>
+                        <BarChart3 size={24} color={theme.textInverse} />
+                        <Text style={[styles.actionText, { color: theme.textInverse }]}>Analytics</Text>
+                      </TouchableOpacity>
+                    )}
+                    {idx === 4 && (
+                      <TouchableOpacity style={[styles.actionButton, { backgroundColor: theme.info }]} onPress={exportLeadsToCSV}>
+                        <Download size={24} color={theme.textInverse} />
+                        <Text style={[styles.actionText, { color: theme.textInverse }]}>Export Leads</Text>
+                      </TouchableOpacity>
+                    )}
+                  </AnimatedCard>
+                ))}
+              </View>
+            ) : (
+              <View style={styles.quickActionsRow}>
+                {[
+                  { title: 'Manage Users', icon: UserPlus, color: theme.primary, onPress: () => router.push('/(super_admin)/users') },
+                  { title: 'Bulk Import', icon: Upload, color: theme.success, onPress: () => setShowBulkImportModal(true) },
+                  { title: 'Lead Assignment', icon: Target, color: theme.warning, onPress: () => router.push('/(super_admin)/lead-assignment') },
+                  { title: 'Analytics', icon: BarChart3, color: theme.info, onPress: () => router.push('/(super_admin)/work-tracking') },
+                  { title: 'Export Leads', icon: Download, color: theme.info, onPress: exportLeadsToCSV },
+                ].map((action, index) => (
+                  <AnimatedCard
+                    key={action.title}
+                    style={{
+                      width: '19%',
+                      backgroundColor: '#fff',
+                      padding: 16,
+                      borderRadius: 16,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      elevation: 2,
+                      shadowColor: '#000',
+                      shadowOffset: { width: 0, height: 2 },
+                      shadowOpacity: 0.08,
+                      shadowRadius: 4,
+                    }}
+                  >
+                    <TouchableOpacity
+                      style={[styles.actionButton, { backgroundColor: action.color }]}
+                      onPress={action.onPress}
+                    >
+                      <action.icon size={24} color={theme.textInverse} />
+                      <Text style={[styles.actionText, { color: theme.textInverse }]}>{action.title}</Text>
+                    </TouchableOpacity>
+                  </AnimatedCard>
+                ))}
+              </View>
+            )}
           </View>
         </SlideInView>
 
@@ -760,7 +811,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'space-between',
-  },
+  } as ViewStyle,
   kpiCard: {
     width: '48%',
     backgroundColor: '#FFFFFF',
@@ -800,17 +851,33 @@ const styles = StyleSheet.create({
   actionsContainer: {
     marginTop: 24,
   },
-  actionCard: {
-    width: '48%',
-    alignItems: 'center',
+  actionRow: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
     marginBottom: 16,
   },
+  actionCard: {
+    width: 180,
+    minWidth: 160,
+    backgroundColor: '#FFFFFF',
+    padding: 16,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    marginRight: 16,
+    flexShrink: 0,
+  },
   actionButton: {
-    width: (width - 40) / 4 - 12,
-    aspectRatio: 1,
+    width: '100%',
     borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
+    padding: 16,
   },
   actionText: {
     marginTop: 8,
@@ -950,5 +1017,30 @@ const styles = StyleSheet.create({
   },
   leadListContainer: {
     marginTop: 24,
+  },
+  quickActionsGridSmall: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+  } as ViewStyle,
+  quickActionsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'stretch',
+    width: '100%',
+    marginBottom: 16,
+  },
+  actionCardBase: {
+    backgroundColor: '#fff',
+    padding: 16,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    marginBottom: 16,
   },
 });
