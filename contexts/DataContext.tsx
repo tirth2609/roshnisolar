@@ -527,7 +527,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       const { error } = await supabase.from('leads').update({
         call_operator_id: callOperatorId,
         call_operator_name: callOperator.name,
-        status: 'contacted',
+        status: 'new',
         updated_at: new Date().toISOString()
       }).eq('id', leadId);
       
@@ -577,7 +577,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         case 'call_operator':
           updateData.call_operator_id = newUserId;
           updateData.call_operator_name = newUser.name;
-          updateData.status = 'contacted';
+          updateData.status = 'new';
           break;
         case 'technician':
           updateData.technician_id = newUserId;
@@ -1017,7 +1017,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       const { error } = await supabase.from('leads').update({
         call_operator_id: callOperatorId,
         call_operator_name: callOperator.name,
-        status: 'contacted',
+        status: 'new',
         updated_at: new Date().toISOString()
       }).in('id', leadIds);
       
