@@ -1,5 +1,5 @@
 // contexts/DataContext.tsx
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { Alert } from 'react-native';
 import { Lead, NewLeadData, LeadStatus, RescheduleData, ScheduleCallData, CallLaterLog, CallLaterData, LeadStatusUpdateData } from '@/types/leads';
 import { SupportTicket, NewTicketData, TicketStatus } from '@/types/support';
@@ -39,11 +39,11 @@ interface DataContextType {
   bulkAssignLeadsToCallOperator: (leadIds: string[], callOperatorId: string) => Promise<void>;
   bulkAssignLeadsToTechnician: (leadIds: string[], technicianId: string) => Promise<void>;
   scheduleCall: (scheduleData: ScheduleCallData) => Promise<void>;
-  getUnassignedLeads: () => Lead[];
-  getUnassignedToCallOperators: () => Lead[];
-  getUnassignedToTechnicians: () => Lead[];
-  getLeadsByUser: (userId: string, userRole: string) => Lead[];
-  getScheduledCallsForToday: (userId: string) => Lead[];
+  getUnassignedLeads: () => Promise<Lead[]>;
+  getUnassignedToCallOperators: () => Promise<Lead[]>;
+  getUnassignedToTechnicians: () => Promise<Lead[]>;
+  getLeadsByUser: (userId: string, userRole: string) => Promise<Lead[]>;
+  getScheduledCallsForToday: (userId: string) => Promise<Lead[]>;
   rescheduleLead: (rescheduleData: RescheduleData) => Promise<void>;
   convertLeadToCustomer: (leadId: string, notes?: string) => Promise<void>;
   convertLeadToCustomerWithDetails: (data: CustomerConversionData) => Promise<void>;
@@ -60,20 +60,20 @@ interface DataContextType {
   getTeamLeads: () => AppUserFromDB[];
   getSalesmen: () => AppUserFromDB[];
   getLeadsBySalesman: (salesmanId: string) => Lead[];
-  getUserWorkStats: (userId: string) => any;
+  getUserWorkStats: (userId: string) => Promise<any>;
   addUser: (userData: any) => Promise<void>;
   updateUser: (userId: string, userData: any) => Promise<void>;
   deleteUser: (userId: string) => Promise<void>;
   toggleUserStatus: (userId: string, currentStatus: boolean) => Promise<void>;
   bulkImportLeads: (leadsData: NewLeadData[]) => Promise<void>;
-  getAnalytics: () => any;
+  getAnalytics: () => Promise<any>;
   addCallLaterLog: (data: CallLaterData) => Promise<void>;
   getCallLaterLogs: (leadId: string) => CallLaterLog[];
   getCallLaterLogsByOperator: (operatorId: string) => CallLaterLog[];
   searchLeadsByPhone: (phoneNumber: string) => Lead[];
-  getCancelledLeads: () => Lead[];
+  getCancelledLeads: () => Promise<Lead[]>;
   bulkReassignCancelledLeads: (leadIds: string[], callOperatorId: string) => Promise<void>;
-  getTransitLeads: () => Lead[];
+  getTransitLeads: () => Promise<Lead[]>;
   generateCustomerId: (propertyType: string) => Promise<string>;
   updateCustomerProjectStatus: (customerId: string, status: ProjectStatus) => Promise<void>;
   logCall: (logData: { leadId?: string; customerId?: string; status?: LeadStatus, notes?: string }) => Promise<void>;
@@ -86,9 +86,12 @@ interface DataContextType {
   getPredefinedMessagesByCategory: (category: string) => PredefinedMessage[];
   isLoading: boolean;
   refreshData: () => Promise<void>;
-  fetchLeads: () => Promise<void>;
-  fetchNextLeadPage: () => Promise<void>;
-  fetchPrevLeadPage: () => Promise<void>;
+  // New pagination state and functions
+  fetchLeads: (page?: number, pageSize?: number) => Promise<void>;
+  leadPage: number;
+  totalLeadsCount: number;
+  setLeadPage: (page: number) => void;
+  leadPageSize: number;
   setLeadPageSize: React.Dispatch<React.SetStateAction<number>>;
   updateLeadStatusWithLog: (leadId: string, status: LeadStatus, notes?: string) => Promise<void>;
 }
@@ -106,69 +109,60 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const { user, isAuthenticated } = useAuth();
 
-  // Function to fetch all leads from Supabase
-  const fetchLeads = async () => {
+  // Pagination state for leads
+  const [leadPage, setLeadPage] = useState(1);
+  const [leadPageSize, setLeadPageSize] = useState(20);
+  const [totalLeadsCount, setTotalLeadsCount] = useState(0);
+
+  // Function to fetch leads with pagination and joins
+  const fetchLeads = useCallback(async (page = leadPage, pageSize = leadPageSize) => {
     try {
-      console.log('🔍 Fetching ALL leads from Supabase...');
+      console.log(`🔍 Fetching leads (Page ${page}, Size ${pageSize})`);
+      const from = (page - 1) * pageSize;
+      const to = from + pageSize - 1;
+
       const { data, error, count } = await supabase
         .from('leads')
-        .select('*', { count: 'exact' })
+        .select(`
+          *,
+          salesman:app_users!salesman_id(name),
+          call_operator:app_users!call_operator_id(name),
+          technician:app_users!technician_id(name),
+          team_lead:app_users!team_lead_id(name),
+          super_admin:app_users!super_admin_id(name),
+          created_by:app_users!created_by(name)
+        `, { count: 'exact' })
         .order('created_at', { ascending: false })
-        .range(0, 10000); // fetch up to 100,000 leads
+        .range(from, to);
 
-      if (error) {
-        console.error('❌ Error fetching leads:', error);
-        throw error;
-      }
+      if (error) throw error;
 
-      console.log('✅ Leads fetched successfully:', data?.length || 0, 'leads found');
-      // Map snake_case fields to match the updated Lead interface
-      const mappedLeads = (data || []).map((lead: any) => ({
-        id: lead.id,
-        customer_name: lead.customer_name,
-        phone_number: lead.phone_number,
-        additional_phone: lead.additional_phone,
-        email: lead.email,
-        address: lead.address,
-        property_type: lead.property_type,
-        likelihood: lead.likelihood,
-        status: lead.status,
-        salesman_id: lead.salesman_id,
-        salesman_name: lead.salesman_name,
-        call_operator_id: lead.call_operator_id,
-        call_operator_name: lead.call_operator_name,
-        technician_id: lead.technician_id,
-        technician_name: lead.technician_name,
-        call_notes: lead.call_notes,
-        visit_notes: lead.visit_notes,
-        follow_up_date: lead.follow_up_date,
-        rescheduled_date: lead.rescheduled_date,
-        rescheduled_by: lead.rescheduled_by,
-        reschedule_reason: lead.reschedule_reason,
-        scheduled_call_date: lead.scheduled_call_date,
-        scheduledCallTime: lead.scheduledCallTime,
-        scheduled_call_reason: lead.scheduled_call_reason,
-        customer_id: lead.customer_id,
-        call_later_count: lead.call_later_count,
-        last_call_later_date: lead.last_call_later_date,
-        last_call_later_reason: lead.last_call_later_reason,
-        created_at: lead.created_at,
-        updated_at: lead.updated_at,
+      // Map the joined data to match the Lead interface
+      const mappedLeads: Lead[] = (data || []).map((lead: any) => ({
+        ...lead,
+        salesman_name: lead.salesman?.name || null,
+        call_operator_name: lead.call_operator?.name || null,
+        technician_name: lead.technician?.name || null,
+        team_lead_name: lead.team_lead?.name || null,
+        super_admin_name: lead.super_admin?.name || null,
+        created_by_name: lead.created_by?.name || null, // FIX: Fetching created_by_name
       }));
+
       setLeads(mappedLeads);
+      setTotalLeadsCount(count || 0);
+      console.log('✅ Leads fetched successfully:', mappedLeads.length, 'leads on this page. Total count:', count);
     } catch (error: any) {
       console.error('❌ Error fetching leads:', error.message);
       Alert.alert('Error', 'Failed to fetch leads. Please check your connection.');
     }
-  };
+  }, [leadPage, leadPageSize]);
 
   // Function to fetch customers from Supabase
-  const fetchCustomers = async () => {
+  const fetchCustomers = useCallback(async () => {
     try {
       const { data, error } = await supabase.from('customers').select('*').order('created_at', { ascending: false });
       if (error) throw error;
       
-      // Map snake_case fields to camelCase
       const mappedCustomers = (data || []).map((customer: any) => ({
         ...customer,
         customerId: customer.customer_id,
@@ -199,10 +193,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       console.error('Error fetching customers:', error.message);
       Alert.alert('Error', 'Failed to fetch customers. Please check your connection.');
     }
-  };
+  }, []);
 
   // Function to fetch users from your custom 'app_users' table
-  const fetchAppUsers = async () => {
+  const fetchAppUsers = useCallback(async () => {
     try {
       const { data, error } = await supabase.from('app_users').select('*').order('created_at', { ascending: false });
       if (error) throw error;
@@ -223,10 +217,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       console.error('Error fetching app users:', error.message);
       Alert.alert('Error', 'Failed to fetch users. Please check your connection.');
     }
-  };
+  }, []);
 
   // Function to fetch support tickets
-  const fetchSupportTickets = async () => {
+  const fetchSupportTickets = useCallback(async () => {
     try {
       const { data, error } = await supabase.from('support_tickets').select('*').order('created_at', { ascending: false });
       if (error) throw error;
@@ -235,17 +229,16 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       console.error('Error fetching support tickets:', error.message);
       Alert.alert('Error', 'Failed to fetch support tickets. Please check your connection.');
     }
-  };
+  }, []);
 
   // Function to fetch call later logs
-  const fetchCallLaterLogs = async () => {
+  const fetchCallLaterLogs = useCallback(async () => {
     try {
       const { data, error } = await supabase
         .from('call_later_logs')
         .select('*')
         .order('created_at', { ascending: false });
       if (error) throw error;
-      // Map snake_case to match the updated CallLaterLog interface
       const mappedLogs: CallLaterLog[] = (data || []).map((log: any) => ({
         id: log.id,
         lead_id: log.lead_id,
@@ -260,9 +253,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     } catch (error: any) {
       console.error('Error fetching call later logs:', error.message);
     }
-  };
+  }, []);
 
-  const fetchCallLogs = async () => {
+  const fetchCallLogs = useCallback(async () => {
     try {
       const { data, error } = await supabase
         .from('call_logs')
@@ -283,10 +276,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     } catch (error: any) {
       console.error('Error fetching call logs:', error.message);
     }
-  };
+  }, []);
 
   // Function to fetch predefined messages from Supabase
-  const fetchPredefinedMessages = async () => {
+  const fetchPredefinedMessages = useCallback(async () => {
     try {
       const { data, error } = await supabase
         .from('predefined_messages')
@@ -298,26 +291,32 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       setPredefinedMessages(data || []);
     } catch (error: any) {
       console.error('Error fetching predefined messages:', error.message);
-      // Don't show alert for predefined messages as they're not critical
     }
-  };
+  }, []);
+
+  const refreshData = useCallback(async () => {
+    if (!isAuthenticated) return;
+    setIsLoading(true);
+    try {
+      await Promise.all([
+        fetchLeads(1, leadPageSize), // Always refresh to the first page
+        fetchAppUsers(), 
+        fetchSupportTickets(), 
+        fetchCustomers(),
+        fetchCallLaterLogs(),
+        fetchCallLogs(),
+        fetchPredefinedMessages(),
+      ]);
+    } catch (err) {
+      Alert.alert('Error', 'Failed to refresh data. Please check your connection.');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [isAuthenticated, fetchLeads, fetchAppUsers, fetchSupportTickets, fetchCustomers, fetchCallLaterLogs, fetchCallLogs, fetchPredefinedMessages, leadPageSize]);
 
   useEffect(() => {
     if (isAuthenticated) {
-      const loadData = async () => {
-        setIsLoading(true);
-        await Promise.all([
-          fetchLeads(), 
-          fetchAppUsers(), 
-          fetchSupportTickets(), 
-          fetchCustomers(),
-          fetchCallLaterLogs(),
-          fetchCallLogs(),
-          fetchPredefinedMessages(),
-        ]);
-        setIsLoading(false);
-      };
-      loadData();
+      refreshData();
     } else {
       setLeads([]);
       setSupportTickets([]);
@@ -328,14 +327,13 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       setPredefinedMessages([]);
       setIsLoading(false);
     }
-  }, [isAuthenticated]);
+  }, [isAuthenticated, refreshData]);
 
   const addLead = async (leadData: NewLeadData): Promise<void> => {
     if (!user) {
       Alert.alert('Error', 'User not authenticated.');
       return;
     }
-
     try {
       const { data, error } = await supabase.from('leads').insert({
         customer_name: leadData.customer_name,
@@ -347,12 +345,11 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         status: 'new',
         salesman_id: user.id,
         salesman_name: user.name,
+        created_by: user.id, // Store created_by
       }).select();
       
       if (error) throw error;
-      if (data) {
-        setLeads(prev => [data[0] as Lead, ...prev]);
-      }
+      refreshData();
     } catch (error: any) {
       console.error('Error adding lead:', error.message);
       Alert.alert('Error', `Failed to add lead: ${error.message}`);
@@ -370,20 +367,17 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         status,
         updated_at: new Date().toISOString()
       };
-
       if (notes && status === 'contacted') {
         updateData.call_notes = notes;
         updateData.call_operator_id = user.id;
         updateData.call_operator_name = user.name;
       }
-
       if (notes && (status === 'transit' || status === 'completed')) {
         updateData.visit_notes = notes;
       }
-
       const { error } = await supabase.from('leads').update(updateData).eq('id', leadId);
       if (error) throw error;
-      fetchLeads(); // Refresh leads after update
+      fetchLeads();
     } catch (error: any) {
       console.error('Error updating lead status:', error.message);
       Alert.alert('Error', `Failed to update lead status: ${error.message}`);
@@ -402,10 +396,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       
       if (error) throw error;
       
-      // Get lead details for notification
       const lead = leads.find(l => l.id === rescheduleData.leadId);
       if (lead) {
-        // Create notification for the call operator
         await NotificationService.createRescheduleNotification(
           rescheduleData.rescheduledBy,
           rescheduleData.leadId,
@@ -413,8 +405,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           rescheduleData.newDate,
           rescheduleData.reason
         );
-        
-        // Show local notification
         NotificationService.showLocalNotification(
           'Lead Rescheduled',
           `Lead for ${lead.customer_name} has been rescheduled to ${new Date(rescheduleData.newDate).toLocaleDateString()}`
@@ -435,8 +425,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         Alert.alert('Error', 'Lead not found.');
         return;
       }
-
-      // Create customer record
       const customerData: NewCustomerData = {
         customer_name: lead.customer_name,
         phone_number: lead.phone_number,
@@ -446,7 +434,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         lead_id: leadId,
         notes: notes || `Converted from lead on ${new Date().toLocaleDateString()}`
       };
-
       const { data: customer, error: customerError } = await supabase.from('customers').insert({
         customer_name: customerData.customer_name,
         phone_number: customerData.phone_number,
@@ -458,19 +445,13 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         status: 'active',
         notes: customerData.notes
       }).select();
-
       if (customerError) throw customerError;
-
-      // Update lead with customer reference
       const { error: leadError } = await supabase.from('leads').update({
         customer_id: customer[0].id,
         status: 'completed',
         updated_at: new Date().toISOString()
       }).eq('id', leadId);
-
       if (leadError) throw leadError;
-
-      // Create notification for lead completion
       if (lead.salesman_id) {
         await NotificationService.createLeadCompletionNotification(
           lead.salesman_id,
@@ -478,14 +459,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           lead.customer_name
         );
       }
-
-      // Show local notification
       NotificationService.showLocalNotification(
         'Lead Converted',
         `Lead for ${lead.customer_name} has been successfully converted to customer.`
       );
-
-      // Refresh data
       await Promise.all([fetchLeads(), fetchCustomers()]);
     } catch (error: any) {
       console.error('Error converting lead to customer:', error.message);
@@ -499,7 +476,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       Alert.alert('Error', 'Technician not found.');
       return;
     }
-
     try {
       const { error } = await supabase.from('leads').update({
         technician_id: technicianId,
@@ -522,7 +498,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       Alert.alert('Error', 'Call operator not found.');
       return;
     }
-
     try {
       const { error } = await supabase.from('leads').update({
         call_operator_id: callOperatorId,
@@ -532,14 +507,11 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       }).eq('id', leadId);
       
       if (error) throw error;
-      
-      // Create notification for the call operator
       await NotificationService.createLeadAssignmentNotification(
         callOperatorId,
         leadId,
         'New Lead Assigned'
       );
-      
       fetchLeads();
     } catch (error: any) {
       console.error('Error assigning call operator to lead:', error.message);
@@ -553,21 +525,16 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       Alert.alert('Error', 'User not found.');
       return;
     }
-
     try {
       const updateData: any = {
-        updated_at: new Date().toISOString()
+        updated_at: new Date().toISOString(),
+        salesman_id: null,
+        salesman_name: null,
+        call_operator_id: null,
+        call_operator_name: null,
+        technician_id: null,
+        technician_name: null,
       };
-
-      // Clear previous assignments
-      updateData.salesman_id = null;
-      updateData.salesman_name = null;
-      updateData.call_operator_id = null;
-      updateData.call_operator_name = null;
-      updateData.technician_id = null;
-      updateData.technician_name = null;
-
-      // Assign based on role
       switch (newUserRole) {
         case 'salesman':
           updateData.salesman_id = newUserId;
@@ -587,68 +554,89 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         default:
           throw new Error('Invalid user role for lead assignment');
       }
-
       const { error } = await supabase.from('leads').update(updateData).eq('id', leadId);
       
       if (error) throw error;
-      
-      // Create notification for the new assignee
       await NotificationService.createLeadAssignmentNotification(
         newUserId,
         leadId,
         'Lead Reassigned'
       );
-      
       fetchLeads();
     } catch (error: any) {
       console.error('Error reassigning lead:', error.message);
       Alert.alert('Error', `Failed to reassign lead: ${error.message}`);
     }
   };
+  
+  // Refactored to query database directly for efficiency
+  const getUnassignedLeads = useCallback(async (): Promise<Lead[]> => {
+    const { data, error } = await supabase.from('leads').select('*').is('call_operator_id', null).is('technician_id', null);
+    if (error) {
+      console.error('Error fetching unassigned leads:', error);
+      return [];
+    }
+    return data || [];
+  }, []);
 
-  const getUnassignedLeads = (): Lead[] => {
-    return leads.filter(lead => 
-      !lead.call_operator_id && 
-      !lead.technician_id
-    );
-  };
+  const getUnassignedToCallOperators = useCallback(async (): Promise<Lead[]> => {
+    const { data, error } = await supabase.from('leads').select('*').is('call_operator_id', null);
+    if (error) {
+      console.error('Error fetching unassigned leads for operators:', error);
+      return [];
+    }
+    return data || [];
+  }, []);
 
-  const getUnassignedToCallOperators = (): Lead[] => {
-    return leads.filter(lead => !lead.call_operator_id);
-  };
+  const getUnassignedToTechnicians = useCallback(async (): Promise<Lead[]> => {
+    const { data, error } = await supabase.from('leads').select('*').is('technician_id', null);
+    if (error) {
+      console.error('Error fetching unassigned leads for technicians:', error);
+      return [];
+    }
+    return data || [];
+  }, []);
 
-  const getUnassignedToTechnicians = (): Lead[] => {
-    return leads.filter(lead => !lead.technician_id);
-  };
-
-  const getLeadsByUser = (userId: string, userRole: string): Lead[] => {
+  const getLeadsByUser = useCallback(async (userId: string, userRole: string): Promise<Lead[]> => {
+    let query = supabase.from('leads').select('*');
     switch (userRole) {
       case 'salesman':
-        return leads.filter(lead => lead.salesman_id === userId);
+        query = query.eq('salesman_id', userId);
+        break;
       case 'call_operator':
-        return leads.filter(lead => lead.call_operator_id === userId);
+        query = query.eq('call_operator_id', userId);
+        break;
       case 'technician':
-        return leads.filter(lead => lead.technician_id === userId);
+        query = query.eq('technician_id', userId);
+        break;
       default:
         return [];
     }
-  };
+    const { data, error } = await query;
+    if (error) {
+      console.error('Error fetching leads by user:', error);
+      return [];
+    }
+    return data || [];
+  }, []);
 
-  const getScheduledCallsForToday = (userId: string): Lead[] => {
-    const today = new Date().toDateString();
-    return leads.filter(lead => {
-      if (lead.call_operator_id !== userId || !lead.scheduled_call_date) return false;
-      const scheduledDate = new Date(lead.scheduled_call_date).toDateString();
-      return scheduledDate === today;
-    });
-  };
+  const getScheduledCallsForToday = useCallback(async (userId: string): Promise<Lead[]> => {
+    const today = new Date().toISOString().split('T')[0];
+    const { data, error } = await supabase.from('leads').select('*')
+      .eq('call_operator_id', userId)
+      .eq('scheduled_call_date', today);
+    if (error) {
+      console.error('Error fetching scheduled calls:', error);
+      return [];
+    }
+    return data || [];
+  }, []);
 
   const scheduleCall = async (scheduleData: ScheduleCallData): Promise<void> => {
     if (!user) {
       Alert.alert('Error', 'User not authenticated.');
       return;
     }
-
     try {
       const { error } = await supabase.from('leads').update({
         scheduled_call_date: scheduleData.callDate,
@@ -657,10 +645,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         status: 'hold',
         updated_at: new Date().toISOString()
       }).eq('id', scheduleData.leadId);
-      
       if (error) throw error;
-      
-      // Create notification for the scheduled call
       await NotificationService.createNotification({
         userId: user.id,
         title: 'Call Scheduled',
@@ -669,7 +654,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         data: { leadId: scheduleData.leadId },
         isRead: false,
       });
-      
       fetchLeads();
     } catch (error: any) {
       console.error('Error scheduling call:', error.message);
@@ -690,11 +674,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         status: 'active',
         notes: customerData.notes
       }).select();
-      
       if (error) throw error;
-      if (data) {
-        setCustomers(prev => [data[0] as Customer, ...prev]);
-      }
+      fetchCustomers();
     } catch (error: any) {
       console.error('Error adding customer:', error.message);
       Alert.alert('Error', `Failed to add customer: ${error.message}`);
@@ -707,7 +688,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         ...customerData,
         updated_at: new Date().toISOString()
       }).eq('id', customerId);
-      
       if (error) throw error;
       fetchCustomers();
     } catch (error: any) {
@@ -721,7 +701,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       Alert.alert('Error', 'User not authenticated.');
       return;
     }
-
     try {
       const leadsToInsert = leadsData.map(lead => ({
         customer_name: lead.customer_name,
@@ -733,12 +712,11 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         status: 'new',
         salesman_id: user.id,
         salesman_name: user.name,
+        created_by: user.id,
       }));
-
       const { error } = await supabase.from('leads').insert(leadsToInsert);
       if (error) throw error;
-      
-      fetchLeads(); // Refresh leads after import
+      fetchLeads();
       Alert.alert('Success', `Successfully imported ${leadsData.length} leads.`);
     } catch (error: any) {
       console.error('Error importing leads:', error.message);
@@ -751,7 +729,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       Alert.alert('Error', 'User not authenticated.');
       return;
     }
-
     try {
       const { data, error } = await supabase.from('support_tickets').insert({
         customer_name: ticketData.customer_name,
@@ -763,11 +740,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         operator_id: user.id,
         operator_name: user.name,
       }).select();
-      
       if (error) throw error;
-      if (data) {
-        setSupportTickets(prev => [data[0] as SupportTicket, ...prev]);
-      }
+      fetchSupportTickets();
     } catch (error: any) {
       console.error('Error adding support ticket:', error.message);
       Alert.alert('Error', `Failed to add support ticket: ${error.message}`);
@@ -779,20 +753,17 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       Alert.alert('Error', 'User not authenticated.');
       return;
     }
-    
     try {
       const updateData: any = {
         status,
         updated_at: new Date().toISOString()
       };
-
       if (notes) {
         updateData.notes = notes;
       }
-
       const { error } = await supabase.from('support_tickets').update(updateData).eq('id', ticketId);
       if (error) throw error;
-      fetchSupportTickets(); // Refresh tickets after update
+      fetchSupportTickets();
     } catch (error: any) {
       console.error('Error updating ticket status:', error.message);
       Alert.alert('Error', `Failed to update ticket status: ${error.message}`);
@@ -805,7 +776,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       Alert.alert('Error', 'Technician not found.');
       return;
     }
-
     try {
       const { error } = await supabase.from('support_tickets').update({
         technician_id: technicianId,
@@ -813,7 +783,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         status: 'in_progress',
         updated_at: new Date().toISOString()
       }).eq('id', ticketId);
-      
       if (error) throw error;
       fetchSupportTickets();
     } catch (error: any) {
@@ -823,21 +792,17 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   };
 
   const getUserLeads = (userId: string): Lead[] => {
-    // Get the user's role
     const currentUser = appUsers.find(u => u.id === userId);
     if (!currentUser) return [];
-
     switch (currentUser.role) {
       case 'salesman':
         return leads.filter(lead => lead.salesman_id === userId);
       case 'call_operator':
-        // Call operators only see their assigned leads
         return leads.filter(lead => lead.call_operator_id === userId);
       case 'technician':
         return leads.filter(lead => lead.technician_id === userId);
       case 'super_admin':
       case 'team_lead':
-        // Admins and team leads see all leads
         return leads;
       default:
         return [];
@@ -846,7 +811,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
   const getUserTickets = (userId: string): SupportTicket[] => {
     if (!user) return [];
-    
     switch (user.role) {
       case 'call_operator':
         return supportTickets.filter(ticket => ticket.operator_id === userId || !ticket.technician_id);
@@ -869,21 +833,17 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       Alert.alert('Error', 'User not authenticated.');
       return;
     }
-
     try {
       const { data, error } = await supabase.from('app_users').insert({
         name: userData.name,
         email: userData.email,
         phone: userData.phone,
         role: userData.role,
-        password_hash: userData.password, // This should be hashed in the Edge Function
+        password_hash: userData.password,
         is_active: true,
       }).select();
-      
       if (error) throw error;
-      if (data) {
-        setAppUsers(prev => [data[0] as AppUserFromDB, ...prev]);
-      }
+      fetchAppUsers();
     } catch (error: any) {
       console.error('Error adding user:', error.message);
       Alert.alert('Error', `Failed to add user: ${error.message}`);
@@ -896,7 +856,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       Alert.alert('Error', 'User not authenticated.');
       return;
     }
-
     try {
       const { error } = await supabase.from('app_users').update({
         name: userData.name,
@@ -905,9 +864,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         role: userData.role,
         updated_at: new Date().toISOString()
       }).eq('id', userId);
-      
       if (error) throw error;
-      await fetchAppUsers();
+      fetchAppUsers();
     } catch (error: any) {
       console.error('Error updating user:', error.message);
       Alert.alert('Error', `Failed to update user: ${error.message}`);
@@ -920,17 +878,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       Alert.alert('Error', 'User not authenticated.');
       return;
     }
-
     try {
-      // Check if user is trying to delete themselves
       if (userId === user.id) {
         throw new Error('You cannot delete your own account');
       }
-
       const { error } = await supabase.from('app_users').delete().eq('id', userId);
       if (error) throw error;
-      
-      // Refresh users list
       await fetchAppUsers();
     } catch (error: any) {
       console.error('Error deleting user:', error.message);
@@ -944,24 +897,15 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       Alert.alert('Error', 'User not authenticated.');
       return;
     }
-
     try {
-      // Check if user is trying to deactivate themselves
       if (userId === user.id) {
         throw new Error('You cannot deactivate your own account');
       }
-
-      const { error } = await supabase
-        .from('app_users')
-        .update({ 
-          is_active: !currentStatus,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', userId);
-
+      const { error } = await supabase.from('app_users').update({ 
+        is_active: !currentStatus,
+        updated_at: new Date().toISOString()
+      }).eq('id', userId);
       if (error) throw error;
-      
-      // Refresh users list
       await fetchAppUsers();
     } catch (error: any) {
       console.error('Error toggling user status:', error.message);
@@ -970,40 +914,47 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const getAnalytics = () => {
-    const totalLeads = leads.length;
-    const completedLeads = leads.filter(l => l.status === 'completed').length;
-    const activeTickets = supportTickets.filter(t => t.status !== 'resolved' && t.status !== 'closed').length;
-    const conversionRate = totalLeads > 0 ? (completedLeads / totalLeads * 100).toFixed(1) : '0';
+  // Refactored to use direct database queries for efficiency
+  const getAnalytics = useCallback(async () => {
+    const totalLeadsPromise = supabase.from('leads').select('*', { count: 'exact', head: true });
+    const completedLeadsPromise = supabase.from('leads').select('*', { count: 'exact', head: true }).eq('status', 'completed');
+    const activeTicketsPromise = supabase.from('support_tickets').select('*', { count: 'exact', head: true }).not('status', 'in', ['resolved', 'closed']);
+    const totalUsersPromise = supabase.from('app_users').select('*', { count: 'exact', head: true });
+    const activeUsersPromise = supabase.from('app_users').select('*', { count: 'exact', head: true }).eq('is_active', true);
+    
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString();
+    const monthlyLeadsPromise = supabase.from('leads').select('*', { count: 'exact', head: true }).gte('created_at', startOfMonth).lte('created_at', endOfMonth);
+
+    const [
+      { count: totalLeads },
+      { count: completedLeads },
+      { count: activeTickets },
+      { count: totalUsers },
+      { count: activeUsers },
+      { count: monthlyLeads }
+    ] = await Promise.all([
+      totalLeadsPromise,
+      completedLeadsPromise,
+      activeTicketsPromise,
+      totalUsersPromise,
+      activeUsersPromise,
+      monthlyLeadsPromise
+    ]);
+
+    const conversionRate = totalLeads && totalLeads > 0 ? ((completedLeads || 0) / totalLeads * 100).toFixed(1) : '0';
 
     return {
       totalLeads,
       completedLeads,
       activeTickets,
       conversionRate,
-      totalUsers: appUsers.length,
-      activeUsers: appUsers.filter(u => u.is_active).length,
-      monthlyLeads: leads.filter(l => {
-        const leadDate = new Date(l.created_at);
-        const now = new Date();
-        return leadDate.getMonth() === now.getMonth() && leadDate.getFullYear() === now.getFullYear();
-      }).length
+      totalUsers,
+      activeUsers,
+      monthlyLeads
     };
-  };
-
-  const refreshData = async (): Promise<void> => {
-    setIsLoading(true);
-    await Promise.all([
-      fetchLeads(), 
-      fetchAppUsers(), 
-      fetchSupportTickets(), 
-      fetchCustomers(),
-      fetchCallLaterLogs(),
-      fetchCallLogs(),
-      fetchPredefinedMessages(),
-    ]);
-    setIsLoading(false);
-  };
+  }, []);
 
   const bulkAssignLeadsToCallOperator = async (leadIds: string[], callOperatorId: string): Promise<void> => {
     const callOperator = appUsers.find(u => u.id === callOperatorId);
@@ -1011,19 +962,14 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       Alert.alert('Error', 'Call operator not found.');
       return;
     }
-
     try {
-      // Update all leads in batch
       const { error } = await supabase.from('leads').update({
         call_operator_id: callOperatorId,
         call_operator_name: callOperator.name,
         status: 'new',
         updated_at: new Date().toISOString()
       }).in('id', leadIds);
-      
       if (error) throw error;
-      
-      // Create notifications for the call operator
       for (const leadId of leadIds) {
         await NotificationService.createLeadAssignmentNotification(
           callOperatorId,
@@ -1031,7 +977,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           'New Lead Assigned'
         );
       }
-      
       fetchLeads();
     } catch (error: any) {
       console.error('Error bulk assigning leads to call operator:', error.message);
@@ -1045,19 +990,14 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       Alert.alert('Error', 'Technician not found.');
       return;
     }
-
     try {
-      // Update all leads in batch
       const { error } = await supabase.from('leads').update({
         technician_id: technicianId,
         technician_name: technician.name,
         status: 'transit',
         updated_at: new Date().toISOString()
       }).in('id', leadIds);
-      
       if (error) throw error;
-      
-      // Create notifications for the technician
       for (const leadId of leadIds) {
         await NotificationService.createLeadAssignmentNotification(
           technicianId,
@@ -1065,7 +1005,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           'New Lead Assigned'
         );
       }
-      
       fetchLeads();
     } catch (error: any) {
       console.error('Error bulk assigning leads to technician:', error.message);
@@ -1081,59 +1020,104 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     return leads.filter(lead => lead.salesman_id === salesmanId);
   };
 
-  const getTransitLeads = (): Lead[] => {
-    return leads.filter(lead => lead.status === 'transit');
-  };
+  const getTransitLeads = useCallback(async (): Promise<Lead[]> => {
+    const { data, error } = await supabase.from('leads').select('*').eq('status', 'transit');
+    if (error) {
+      console.error('Error fetching transit leads:', error);
+      return [];
+    }
+    return data || [];
+  }, []);
 
-  const getUserWorkStats = (userId: string): any => {
-    const userLeads = leads.filter(lead => 
-      lead.call_operator_id === userId || 
-      lead.technician_id === userId || 
-      lead.salesman_id === userId
-    );
+  // Refactored to use direct database queries for efficiency
+  const getUserWorkStats = useCallback(async (userId: string): Promise<any> => {
+    const user = appUsers.find(u => u.id === userId);
+    if (!user) return {};
 
-    const today = new Date().toDateString();
-    const thisWeek = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const baseQuery = supabase.from('leads').select('*', { count: 'exact', head: true });
 
+    let totalQuery = baseQuery;
+    let createdTodayQuery = baseQuery;
+    let createdThisWeekQuery = baseQuery;
+    let completedQuery = baseQuery;
+    let pendingQuery = baseQuery;
+    let lastActivityQuery = supabase.from('leads').select('updated_at').order('updated_at', { ascending: false }).limit(1);
+
+    const now = new Date();
+    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+    const startOfWeek = new Date(now.getFullYear(), now.getMonth(), now.getDate() - now.getDay()).toISOString();
+    const endOfWeek = new Date(now.getFullYear(), now.getMonth(), now.getDate() - now.getDay() + 7).toISOString();
+
+    if (user.role === 'salesman') {
+      totalQuery = totalQuery.eq('salesman_id', userId);
+      createdTodayQuery = createdTodayQuery.eq('salesman_id', userId).gte('created_at', startOfDay);
+      createdThisWeekQuery = createdThisWeekQuery.eq('salesman_id', userId).gte('created_at', startOfWeek).lte('created_at', endOfWeek);
+      completedQuery = completedQuery.eq('salesman_id', userId).eq('status', 'completed');
+      pendingQuery = pendingQuery.eq('salesman_id', userId).in('status', ['new', 'contacted', 'hold', 'transit']);
+      lastActivityQuery = lastActivityQuery.eq('salesman_id', userId);
+    } else if (user.role === 'call_operator') {
+      totalQuery = totalQuery.eq('call_operator_id', userId);
+      createdTodayQuery = createdTodayQuery.eq('call_operator_id', userId).gte('created_at', startOfDay);
+      createdThisWeekQuery = createdThisWeekQuery.eq('call_operator_id', userId).gte('created_at', startOfWeek).lte('created_at', endOfWeek);
+      completedQuery = completedQuery.eq('call_operator_id', userId).eq('status', 'completed');
+      pendingQuery = pendingQuery.eq('call_operator_id', userId).in('status', ['new', 'contacted', 'hold', 'transit']);
+      lastActivityQuery = lastActivityQuery.eq('call_operator_id', userId);
+    } else if (user.role === 'technician') {
+      totalQuery = totalQuery.eq('technician_id', userId);
+      createdTodayQuery = createdTodayQuery.eq('technician_id', userId).gte('created_at', startOfDay);
+      createdThisWeekQuery = createdThisWeekQuery.eq('technician_id', userId).gte('created_at', startOfWeek).lte('created_at', endOfWeek);
+      completedQuery = completedQuery.eq('technician_id', userId).eq('status', 'completed');
+      pendingQuery = pendingQuery.eq('technician_id', userId).in('status', ['new', 'contacted', 'hold', 'transit']);
+      lastActivityQuery = lastActivityQuery.eq('technician_id', userId);
+    } else {
+      return {};
+    }
+
+    const [
+      { count: totalLeads },
+      { count: leadsToday },
+      { count: leadsThisWeek },
+      { count: completedLeads },
+      { count: pendingLeads },
+      { data: lastActivityData }
+    ] = await Promise.all([
+      totalQuery,
+      createdTodayQuery,
+      createdThisWeekQuery,
+      completedQuery,
+      pendingQuery,
+      lastActivityQuery,
+    ]);
+
+    const lastActivity = lastActivityData?.[0]?.updated_at ? new Date(lastActivityData[0].updated_at) : null;
+    
     return {
-      totalLeads: userLeads.length,
-      leadsToday: userLeads.filter(lead => 
-        new Date(lead.created_at).toDateString() === today
-      ).length,
-      leadsThisWeek: userLeads.filter(lead => 
-        new Date(lead.created_at) >= thisWeek
-      ).length,
-      completedLeads: userLeads.filter(lead => lead.status === 'completed').length,
-      pendingLeads: userLeads.filter(lead => 
-        ['new', 'contacted', 'hold', 'transit'].includes(lead.status)
-      ).length,
-      lastActivity: userLeads.length > 0 ? 
-        new Date(Math.max(...userLeads.map(l => new Date(l.updated_at).getTime()))) : 
-        null
+      totalLeads,
+      leadsToday,
+      leadsThisWeek,
+      completedLeads,
+      pendingLeads,
+      lastActivity
     };
-  };
+  }, [appUsers]);
 
   const reassignLeadFromOperator = async (leadId: string, fromOperatorId: string, toOperatorId: string): Promise<void> => {
     if (!user) {
       Alert.alert('Error', 'User not authenticated.');
       return;
     }
-
     try {
       const toOperator = appUsers.find(u => u.id === toOperatorId);
       if (!toOperator) {
         Alert.alert('Error', 'Target operator not found.');
         return;
       }
-
       const { error } = await supabase.from('leads').update({
         call_operator_id: toOperatorId,
         call_operator_name: toOperator.name,
         updated_at: new Date().toISOString()
       }).eq('id', leadId);
-      
       if (error) throw error;
-      
       fetchLeads();
     } catch (error: any) {
       console.error('Error reassigning lead:', error.message);
@@ -1141,7 +1125,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // Implement updateLeadStatusWithCallLater
   const updateLeadStatusWithCallLater = async (data: LeadStatusUpdateData): Promise<void> => {
     if (!user) {
       Alert.alert('Error', 'User not authenticated.');
@@ -1160,7 +1143,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       if (data.notes && (data.newStatus === 'transit' || data.newStatus === 'completed')) {
         updateData.visit_notes = data.notes;
       }
-      // If status is hold and call later data is provided, add call later log and update scheduled call fields
       if (data.newStatus === 'hold' && data.call_later_date && data.call_later_reason) {
         await addCallLaterLog({
           lead_id: data.leadId,
@@ -1174,14 +1156,13 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       }
       const { error } = await supabase.from('leads').update(updateData).eq('id', data.leadId);
       if (error) throw error;
-      await fetchLeads();
+      refreshData();
     } catch (error: any) {
       console.error('Error updating lead status with call later:', error.message);
       Alert.alert('Error', `Failed to update lead status: ${error.message}`);
     }
   };
 
-  // Implement convertLeadToCustomerWithDetails
   const convertLeadToCustomerWithDetails = async (data: CustomerConversionData): Promise<void> => {
     try {
       const lead = leads.find(l => l.id === data.lead_id);
@@ -1189,9 +1170,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         Alert.alert('Error', 'Lead not found.');
         return;
       }
-      // Generate unique customer ID
       const customerId = await generateCustomerId(lead.property_type);
-      // Create customer record with detailed information
       const customerData = {
         customer_id: customerId,
         customer_name: lead.customer_name,
@@ -1223,14 +1202,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         .insert(customerData)
         .select();
       if (customerError) throw customerError;
-      // Update lead with customer reference
       const { error: leadError } = await supabase.from('leads').update({
         customer_id: customer[0].id,
         status: 'completed',
         updated_at: new Date().toISOString()
       }).eq('id', data.lead_id);
       if (leadError) throw leadError;
-      // Create notification for lead completion
       if (lead.salesman_id) {
         await NotificationService.createLeadCompletionNotification(
           lead.salesman_id,
@@ -1249,7 +1226,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // Implement addCallLaterLog
   const addCallLaterLog = async (data: CallLaterData): Promise<void> => {
     if (!user) {
       Alert.alert('Error', 'User not authenticated.');
@@ -1272,17 +1248,14 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // Implement getCallLaterLogs
   const getCallLaterLogs = (leadId: string): CallLaterLog[] => {
     return callLaterLogs.filter((log: CallLaterLog) => log.lead_id === leadId);
   };
 
-  // Implement getCallLaterLogsByOperator
   const getCallLaterLogsByOperator = (operatorId: string): CallLaterLog[] => {
     return callLaterLogs.filter((log: CallLaterLog) => log.call_operator_id === operatorId);
   };
 
-  // Implement searchLeadsByPhone
   const searchLeadsByPhone = (phoneNumber: string): Lead[] => {
     const searchTerm = phoneNumber.toLowerCase().trim();
     return leads.filter(lead => 
@@ -1291,12 +1264,15 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     );
   };
 
-  // Implement getCancelledLeads
-  const getCancelledLeads = (): Lead[] => {
-    return leads.filter(lead => lead.status === 'declined');
-  };
+  const getCancelledLeads = useCallback(async (): Promise<Lead[]> => {
+    const { data, error } = await supabase.from('leads').select('*').eq('status', 'declined');
+    if (error) {
+      console.error('Error fetching cancelled leads:', error);
+      return [];
+    }
+    return data || [];
+  }, []);
 
-  // Implement bulkReassignCancelledLeads
   const bulkReassignCancelledLeads = async (leadIds: string[], callOperatorId: string): Promise<void> => {
     if (!user) {
       Alert.alert('Error', 'User not authenticated.');
@@ -1315,15 +1291,29 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         updated_at: new Date().toISOString()
       }).in('id', leadIds);
       if (error) throw error;
-      await fetchLeads();
-      Alert.alert('Success', `${leadIds.length} cancelled leads reassigned successfully!`);
+      for (const leadId of leadIds) {
+        await NotificationService.createLeadAssignmentNotification(
+          callOperatorId,
+          leadId,
+          'New Lead Assigned'
+        );
+      }
+      fetchLeads();
     } catch (error: any) {
       console.error('Error reassigning cancelled leads:', error.message);
       Alert.alert('Error', `Failed to reassign leads: ${error.message}`);
     }
   };
 
-  // Implement generateCustomerId
+  const getTransitLeads = useCallback(async (): Promise<Lead[]> => {
+    const { data, error } = await supabase.from('leads').select('*').eq('status', 'transit');
+    if (error) {
+      console.error('Error fetching transit leads:', error);
+      return [];
+    }
+    return data || [];
+  }, []);
+
   const generateCustomerId = async (propertyType: string): Promise<string> => {
     try {
       let prefix = '';
@@ -1369,10 +1359,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         .from('customers')
         .update({ project_status: status, updated_at: new Date().toISOString() })
         .eq('id', customerId);
-
       if (error) throw error;
-
-      // Update local state
       setCustomers(prevCustomers =>
         prevCustomers.map(c =>
           c.id === customerId ? { ...c, project_status: status } : c
@@ -1381,7 +1368,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     } catch (error: any) {
       console.error('Error updating customer project status:', error.message);
       Alert.alert('Error', `Failed to update project status: ${error.message}`);
-      throw error; // Re-throw to be caught by the calling component
+      throw error;
     }
   };
 
@@ -1389,7 +1376,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     if (!user) {
       throw new Error("User context is not available for logging.");
     }
-
     const logPayload = {
         user_id: user.id,
         caller_id: user.id,
@@ -1398,11 +1384,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         status_at_call: logData.status,
         notes: logData.notes,
     };
-
     console.log('Attempting to insert into call_logs:', JSON.stringify(logPayload, null, 2));
-
     const { data, error } = await supabase.from('call_logs').insert(logPayload).select();
-
     if (error) {
       console.error('Supabase insert error in logCall:', error);
       throw error;
@@ -1424,21 +1407,14 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       Alert.alert('Error', 'User not authenticated.');
       throw new Error('User not authenticated.');
     }
-
     try {
-      // First, log the call.
       await logCall({ leadId, status, notes });
-
-      // Then, update the lead's status
       const { error: updateError } = await supabase
         .from('leads')
         .update({ status, updated_at: new Date().toISOString() })
         .eq('id', leadId);
-
       if (updateError) throw updateError;
-
-      // Refresh all data
-      await refreshData();
+      refreshData();
     } catch (error: any) {
       console.error('Error in updateLeadStatusWithLog:', error);
       Alert.alert(
@@ -1449,16 +1425,11 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // Implement addPredefinedMessage
   const addPredefinedMessage = async (messageData: CreateMessageData): Promise<void> => {
     if (!user) {
       Alert.alert('Error', 'User not authenticated.');
       return;
     }
-    
-    console.log('🔍 Debug: Current user:', user);
-    console.log('🔍 Debug: Message data:', messageData);
-    
     try {
       const { data, error } = await supabase.from('predefined_messages').insert({
         title: messageData.title,
@@ -1467,19 +1438,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         created_by: user.id,
         is_active: true,
       }).select();
-      
       if (error) {
-        console.error('❌ Supabase error details:', {
-          message: error.message,
-          details: error.details,
-          hint: error.hint,
-          code: error.code
-        });
+        console.error('❌ Supabase error details:', { message: error.message, details: error.details, hint: error.hint, code: error.code });
         throw error;
       }
-      
-      console.log('✅ Message created successfully:', data);
-      
       if (data && data.length > 0) {
         const newMessage = data[0] as PredefinedMessage;
         setPredefinedMessages(prev => [newMessage, ...prev]);
@@ -1491,7 +1453,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // Implement updatePredefinedMessage
   const updatePredefinedMessage = async (messageId: string, messageData: UpdateMessageData): Promise<void> => {
     if (!user) {
       Alert.alert('Error', 'User not authenticated.');
@@ -1503,18 +1464,14 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       if (messageData.message !== undefined) updateData.message = messageData.message;
       if (messageData.category !== undefined) updateData.category = messageData.category;
       if (messageData.is_active !== undefined) updateData.is_active = messageData.is_active;
-
       const { error } = await supabase
         .from('predefined_messages')
         .update(updateData)
         .eq('id', messageId);
-        
       if (error) {
         console.error('Supabase error:', error);
         throw error;
       }
-      
-      // Refresh the messages list
       await fetchPredefinedMessages();
     } catch (error: any) {
       console.error('Error updating predefined message:', error.message);
@@ -1523,7 +1480,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // Implement deletePredefinedMessage
   const deletePredefinedMessage = async (messageId: string): Promise<void> => {
     if (!user) {
       Alert.alert('Error', 'User not authenticated.');
@@ -1539,89 +1495,87 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // Implement getPredefinedMessages
   const getPredefinedMessages = (): PredefinedMessage[] => {
     return predefinedMessages;
   };
 
-  // Implement getPredefinedMessagesByCategory
   const getPredefinedMessagesByCategory = (category: string): PredefinedMessage[] => {
     return predefinedMessages.filter(message => message.category === category);
   };
 
-  return (
-    <DataContext.Provider value={{
-      leads,
-      supportTickets,
-      customers,
-      callLaterLogs,
-      callLogs,
-      predefinedMessages,
-      addLead,
-      updateLeadStatus,
-      updateLeadStatusWithCallLater,
-      assignLeadToTechnician,
-      assignLeadToCallOperator,
-      reassignLead,
-      reassignLeadFromOperator,
-      bulkAssignLeadsToCallOperator,
-      bulkAssignLeadsToTechnician,
-      scheduleCall,
-      getUnassignedLeads,
-      getUnassignedToCallOperators,
-      getUnassignedToTechnicians,
-      getLeadsByUser,
-      getScheduledCallsForToday,
-      rescheduleLead,
-      convertLeadToCustomer,
-      convertLeadToCustomerWithDetails,
-      addSupportTicket,
-      updateTicketStatus,
-      assignTicketToTechnician,
-      addCustomer,
-      updateCustomer,
-      getUserLeads,
-      getUserTickets,
-      getAllUsers,
-      getTechnicians,
-      getCallOperators,
-      getTeamLeads,
-      getSalesmen,
-      getLeadsBySalesman,
-      getUserWorkStats,
-      addUser,
-      updateUser,
-      deleteUser,
-      toggleUserStatus,
-      bulkImportLeads,
-      getAnalytics,
-      addCallLaterLog,
-      getCallLaterLogs,
-      getCallLaterLogsByOperator,
-      searchLeadsByPhone,
-      getCancelledLeads,
-      bulkReassignCancelledLeads,
-      getTransitLeads,
-      generateCustomerId,
-      updateCustomerProjectStatus,
-      logCall,
-      getCallLogs,
-      addPredefinedMessage,
-      updatePredefinedMessage,
-      deletePredefinedMessage,
-      getPredefinedMessages,
-      getPredefinedMessagesByCategory,
-      isLoading,
-      refreshData,
-      fetchLeads,
-      fetchNextLeadPage: () => Promise.resolve(),
-      fetchPrevLeadPage: () => Promise.resolve(),
-      setLeadPageSize: () => {},
-      updateLeadStatusWithLog,
-    }}>
-      {children}
-    </DataContext.Provider>
-  );
+  const value = {
+    leads,
+    supportTickets,
+    customers,
+    callLaterLogs,
+    callLogs,
+    predefinedMessages,
+    addLead,
+    updateLeadStatus,
+    updateLeadStatusWithCallLater,
+    assignLeadToTechnician,
+    assignLeadToCallOperator,
+    reassignLead,
+    reassignLeadFromOperator,
+    bulkAssignLeadsToCallOperator,
+    bulkAssignLeadsToTechnician,
+    scheduleCall,
+    getUnassignedLeads,
+    getUnassignedToCallOperators,
+    getUnassignedToTechnicians,
+    getLeadsByUser,
+    getScheduledCallsForToday,
+    rescheduleLead,
+    convertLeadToCustomer,
+    convertLeadToCustomerWithDetails,
+    addSupportTicket,
+    updateTicketStatus,
+    assignTicketToTechnician,
+    addCustomer,
+    updateCustomer,
+    getUserLeads,
+    getUserTickets,
+    getAllUsers,
+    getTechnicians,
+    getCallOperators,
+    getTeamLeads,
+    getSalesmen,
+    getLeadsBySalesman,
+    getUserWorkStats,
+    addUser,
+    updateUser,
+    deleteUser,
+    toggleUserStatus,
+    bulkImportLeads,
+    getAnalytics,
+    addCallLaterLog,
+    getCallLaterLogs,
+    getCallLaterLogsByOperator,
+    searchLeadsByPhone,
+    getCancelledLeads,
+    bulkReassignCancelledLeads,
+    getTransitLeads,
+    generateCustomerId,
+    updateCustomerProjectStatus,
+    logCall,
+    getCallLogs,
+    addPredefinedMessage,
+    updatePredefinedMessage,
+    deletePredefinedMessage,
+    getPredefinedMessages,
+    getPredefinedMessagesByCategory,
+    isLoading,
+    refreshData,
+    fetchLeads,
+    leadPage,
+    totalLeadsCount,
+    setLeadPage,
+    leadPageSize,
+    setLeadPageSize,
+    updateLeadStatusWithLog,
+  };
+
+  return <DataContext.Provider value={value}>{children}</DataContext.Provider>;
 }
 
 export const useData = () => {
