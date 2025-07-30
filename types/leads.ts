@@ -13,7 +13,7 @@ export interface Lead {
   property_type: PropertyType;
   likelihood: LeadLikelihood;
   status: LeadStatus;
-  salesman_id?: string;
+  salesman_id?: string; 
   salesman_name?: string;
   call_operator_id?: string;
   call_operator_name?: string;
