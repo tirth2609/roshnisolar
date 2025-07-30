@@ -161,9 +161,13 @@ const SuperAdminLeadInfo = ({ routerBase = '/(super_admin)' }) => {
               {/* === CHANGE IS HERE === */}
               <View style={styles.infoRow}>
                 <Text style={styles.infoLabel}>Salesman:</Text>
-                <Text style={styles.infoValue}>{getSalesmanDisplayName(lead)}</Text>
+                <Text style={styles.infoValue}>{lead.salesman_name || '-'}</Text>
               </View>
               {/* ====================== */}
+              <View style={styles.infoRow}>
+                <Text style={styles.infoLabel}>Created By:</Text>
+                <Text style={styles.infoValue}>{lead.created_by_name || '-'}</Text>
+              </View>
               <View style={styles.infoRow}>
                 <Text style={styles.infoLabel}>Call Operator:</Text>
                 <Text style={styles.infoValue}>{lead.call_operator_name || '-'}</Text>
