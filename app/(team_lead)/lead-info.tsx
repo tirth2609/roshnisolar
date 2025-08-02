@@ -7,12 +7,9 @@ import { Info, ArrowLeft, Phone, Clock, MessageCircle, FileText, X } from 'lucid
 
 // Helper function to handle salesman name fallback
 const getSalesmanDisplayName = (lead: any) => {
-  // Check if salesman_name is null, undefined, or an empty string
   if (!lead.salesman_name || lead.salesman_name.trim() === '') {
-    // If salesman_name is not available, return created_by_name
     return lead.created_by_name || '-';
   }
-  // Otherwise, return salesman_name
   return lead.salesman_name;
 };
 
@@ -22,10 +19,8 @@ const SuperAdminLeadInfo = ({ routerBase = '/(super_admin)' }) => {
   const { leads, isLoading, getCallLogs, getCallLaterLogs } = useData();
   const { theme } = useTheme();
 
-  // Create styles inside the component to have access to theme
   const styles = getStyles(theme);
 
-  // Defensive: id may be string | string[] | undefined
   const leadId = Array.isArray(id) ? id[0] : id;
   const leadsLoaded = !isLoading && leads.length > 0;
   const lead = useMemo(() => {
@@ -84,21 +79,17 @@ const SuperAdminLeadInfo = ({ routerBase = '/(super_admin)' }) => {
   const handleCallLater = () => setShowCallLaterModal(true);
   const handleHistory = async () => {
     if (!lead) return;
-    // Fetch logs for this lead
     const callLogs = getCallLogs(lead.id) || [];
     const callLaterLogs = getCallLaterLogs(lead.id) || [];
     setLogs([...callLogs, ...callLaterLogs].sort((a, b) => getLogDate(b).localeCompare(getLogDate(a))));
     setShowLogsModal(true);
   };
 
-  // Call Later log submission
   const handleCallLaterLog = async () => {
     if (!callLaterDate || !callLaterReason) {
       Alert.alert('Error', 'Please enter date and reason.');
       return;
     }
-    // You may want to get user info from context if needed
-    // For now, just close modal and show success
     setShowCallLaterModal(false);
     Alert.alert('Success', 'Call later logged!');
   };
@@ -112,170 +103,169 @@ const SuperAdminLeadInfo = ({ routerBase = '/(super_admin)' }) => {
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Lead Details</Text>
         </View>
-        {/* Action Buttons Row */}
-        <View style={styles.actionButtonContainer}>
-          <TouchableOpacity onPress={handleCall} style={styles.actionButton}>
-            <Phone size={26} color="#10B981" />
-          </TouchableOpacity>
-          <TouchableOpacity onPress={handleCallLater} style={styles.actionButton}>
-            <Clock size={26} color="#F59E0B" />
-          </TouchableOpacity>
-          <TouchableOpacity onPress={handleWhatsApp} style={styles.actionButton}>
-            <MessageCircle size={26} color="#25D366" />
-          </TouchableOpacity>
-          <TouchableOpacity onPress={handleHistory} style={styles.actionButton}>
-            <FileText size={26} color="#3B82F6" />
-          </TouchableOpacity>
-        </View>
-        <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Info size={22} color={theme.primary} />
-              <Text style={styles.sectionTitle}>Customer Information</Text>
-            </View>
-            <View style={styles.infoCard}>
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Name:</Text>
-                <Text style={styles.infoValue}>{lead.customer_name}</Text>
+        <View style={styles.contentWrapper}>
+          <View style={styles.actionButtonContainer}>
+            <TouchableOpacity onPress={handleCall} style={styles.actionButton}>
+              <Phone size={26} color="#10B981" />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={handleCallLater} style={styles.actionButton}>
+              <Clock size={26} color="#F59E0B" />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={handleWhatsApp} style={styles.actionButton}>
+              <MessageCircle size={26} color="#25D366" />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={handleHistory} style={styles.actionButton}>
+              <FileText size={26} color="#3B82F6" />
+            </TouchableOpacity>
+          </View>
+          <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
+            <View style={styles.section}>
+              <View style={styles.sectionHeader}>
+                <Info size={22} color={theme.primary} />
+                <Text style={styles.sectionTitle}>Customer Information</Text>
               </View>
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Phone:</Text>
-                <Text style={styles.infoValue}>{lead.phone_number}</Text>
-              </View>
-              {lead.additional_phone && (
+              <View style={styles.infoCard}>
                 <View style={styles.infoRow}>
-                  <Text style={styles.infoLabel}>Extra Phone:</Text>
-                  <Text style={styles.infoValue}>{lead.additional_phone}</Text>
+                  <Text style={styles.infoLabel}>Name:</Text>
+                  <Text style={styles.infoValue}>{lead.customer_name}</Text>
+                </View>
+                <View style={styles.infoRow}>
+                  <Text style={styles.infoLabel}>Phone:</Text>
+                  <Text style={styles.infoValue}>{lead.phone_number}</Text>
+                  <TouchableOpacity onPress={handleCall}>
+                    <Phone size={18} color={theme.primary} style={{ marginLeft: 8 }}/>
+                  </TouchableOpacity>
+                </View>
+                {lead.additional_phone && (
+                  <View style={styles.infoRow}>
+                    <Text style={styles.infoLabel}>Extra Phone:</Text>
+                    <Text style={styles.infoValue}>{lead.additional_phone}</Text>
+                    <TouchableOpacity onPress={() => Linking.openURL(`tel:${lead.additional_phone}`)}>
+                       <Phone size={18} color={theme.primary} style={{ marginLeft: 8 }}/>
+                    </TouchableOpacity>
+                  </View>
+                )}
+                <View style={styles.infoRow}>
+                  <Text style={styles.infoLabel}>Address:</Text>
+                  <Text style={styles.infoValue} selectable>{lead.address}</Text>
+                </View>
+                <View style={styles.infoRow}>
+                  <Text style={styles.infoLabel}>Status:</Text>
+                  <Text style={styles.infoValue}>{lead.status}</Text>
+                </View>
+                <View style={styles.infoRow}>
+                  <Text style={styles.infoLabel}>Likelihood:</Text>
+                  <Text style={styles.infoValue}>{lead.likelihood}</Text>
+                </View>
+                <View style={styles.infoRow}>
+                  <Text style={styles.infoLabel}>Salesman:</Text>
+                  <Text style={styles.infoValue}>{getSalesmanDisplayName(lead)}</Text>
+                </View>
+                <View style={styles.infoRow}>
+                  <Text style={styles.infoLabel}>Call Operator:</Text>
+                  <Text style={styles.infoValue}>{lead.call_operator_name || '-'}</Text>
+                </View>
+                <View style={styles.infoRow}>
+                  <Text style={styles.infoLabel}>Technician:</Text>
+                  <Text style={styles.infoValue}>{lead.technician_name || '-'}</Text>
+                </View>
+                <View style={styles.infoRow}>
+                  <Text style={styles.infoLabel}>Created By:</Text>
+                  <Text style={styles.infoValue}>{lead.created_by_name || '-'}</Text>
+                </View>
+                <View style={styles.infoRow}>
+                  <Text style={styles.infoLabel}>Created At:</Text>
+                  <Text style={styles.infoValue}>{lead.created_at ? new Date(lead.created_at).toLocaleString() : '-'}</Text>
+                </View>
+                <View style={styles.infoRow}>
+                  <Text style={styles.infoLabel}>Updated At:</Text>
+                  <Text style={styles.infoValue}>{lead.updated_at ? new Date(lead.updated_at).toLocaleString() : '-'}</Text>
+                </View>
+              </View>
+            </View>
+            <View style={styles.section}>
+              <View style={styles.sectionHeader}>
+                <Clock size={22} color={theme.primary} />
+                <Text style={styles.sectionTitle}>Call History</Text>
+              </View>
+              {paginatedLogs.length > 0 ? (
+                paginatedLogs.map(log => (
+                  <View key={log.id} style={styles.logCard}>
+                    <Text style={styles.logText}><Text style={styles.logLabel}>Date:</Text> {new Date(log.created_at).toLocaleString()}</Text>
+                    <Text style={styles.logText}><Text style={styles.logLabel}>Operator:</Text> {log.caller_name || log.user_id || 'Unknown'}</Text>
+                    <Text style={styles.logText}><Text style={styles.logLabel}>Status Logged:</Text> {log.status_at_call || 'N/A'}</Text>
+                    <Text style={styles.logText}><Text style={styles.logLabel}>Notes:</Text> {log.notes || 'N/A'}</Text>
+                  </View>
+                ))
+              ) : (
+                <View style={styles.logCard}>
+                  <Text style={styles.noLogsText}>No call logs found for this lead.</Text>
                 </View>
               )}
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Address:</Text>
-                <Text style={styles.infoValue} selectable>{lead.address}</Text>
-              </View>
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Status:</Text>
-                <Text style={styles.infoValue}>{lead.status}</Text>
-              </View>
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Likelihood:</Text>
-                <Text style={styles.infoValue}>{lead.likelihood}</Text>
-              </View>
-              {/* === CORRECTED SALESMAN NAME ROW === */}
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Salesman:</Text>
-                <Text style={styles.infoValue}>{getSalesmanDisplayName(lead)}</Text>
-              </View>
-              {/* ================================== */}
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Call Operator:</Text>
-                <Text style={styles.infoValue}>{lead.call_operator_name || '-'}</Text>
-              </View>
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Technician:</Text>
-                <Text style={styles.infoValue}>{lead.technician_name || '-'}</Text>
-              </View>
-              {/* DEDICATED CREATED BY ROW */}
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Created By:</Text>
-                <Text style={styles.infoValue}>{lead.created_by_name || '-'}</Text>
-              </View>
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Created At:</Text>
-                <Text style={styles.infoValue}>{lead.created_at ? new Date(lead.created_at).toLocaleString() : '-'}</Text>
-              </View>
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Updated At:</Text>
-                <Text style={styles.infoValue}>{lead.updated_at ? new Date(lead.updated_at).toLocaleString() : '-'}</Text>
-              </View>
-            </View>
-          </View>
-          {/* Call Logs Section */}
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Clock size={22} color={theme.primary} />
-              <Text style={styles.sectionTitle}>Call History</Text>
-            </View>
-            {paginatedLogs.length > 0 ? (
-              paginatedLogs.map(log => (
-                <View key={log.id} style={styles.logCard}>
-                  <Text style={styles.logText}><Text style={styles.logLabel}>Date:</Text> {new Date(log.created_at).toLocaleString()}</Text>
-                  <Text style={styles.logText}><Text style={styles.logLabel}>Operator:</Text> {log.caller_name || log.user_id || 'Unknown'}</Text>
-                  <Text style={styles.logText}><Text style={styles.logLabel}>Status Logged:</Text> {log.status_at_call || 'N/A'}</Text>
-                  <Text style={styles.logText}><Text style={styles.logLabel}>Notes:</Text> {log.notes || 'N/A'}</Text>
+              {totalPages > 1 && (
+                <View style={styles.paginationContainer}>
+                  <TouchableOpacity
+                    style={[styles.paginationButton, logPage === 1 && styles.paginationDisabled]}
+                    onPress={() => setLogPage(p => Math.max(1, p - 1))}
+                    disabled={logPage === 1}
+                  >
+                    <Text style={styles.paginationText}>Previous</Text>
+                  </TouchableOpacity>
+                  <Text style={[styles.paginationText, { color: theme.text }]}>Page {logPage} of {totalPages}</Text>
+                  <TouchableOpacity
+                    style={[styles.paginationButton, logPage === totalPages && styles.paginationDisabled]}
+                    onPress={() => setLogPage(p => Math.min(totalPages, p + 1))}
+                    disabled={logPage === totalPages}
+                  >
+                    <Text style={styles.paginationText}>Next</Text>
+                  </TouchableOpacity>
                 </View>
-              ))
-            ) : (
-              <View style={styles.logCard}>
-                <Text style={styles.noLogsText}>No call logs found for this lead.</Text>
-              </View>
-            )}
-            {/* Pagination Controls */}
-            {totalPages > 1 && (
-              <View style={styles.paginationContainer}>
-                <TouchableOpacity
-                  style={[styles.paginationButton, logPage === 1 && styles.paginationDisabled]}
-                  onPress={() => setLogPage(p => Math.max(1, p - 1))}
-                  disabled={logPage === 1}
-                >
-                  <Text style={styles.paginationText}>Previous</Text>
-                </TouchableOpacity>
-                <Text style={[styles.paginationText, { color: theme.text }]}>Page {logPage} of {totalPages}</Text>
-                <TouchableOpacity
-                  style={[styles.paginationButton, logPage === totalPages && styles.paginationDisabled]}
-                  onPress={() => setLogPage(p => Math.min(totalPages, p + 1))}
-                  disabled={logPage === totalPages}
-                >
-                  <Text style={styles.paginationText}>Next</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-          </View>
-          {/* Call Later Logs Section */}
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Clock size={22} color={theme.primary} />
-              <Text style={styles.sectionTitle}>Call Later History</Text>
+              )}
             </View>
-            {paginatedCallLaterLogs.length > 0 ? (
-              paginatedCallLaterLogs.map(log => (
-                <View key={log.id} style={styles.logCard}>
-                  <Text style={styles.logText}><Text style={styles.logLabel}>Date:</Text> {new Date(log.call_later_date || log.createdAt).toLocaleDateString()}</Text>
-                  <Text style={styles.logText}><Text style={styles.logLabel}>Time:</Text> {new Date(log.call_later_date || log.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
-                  <Text style={styles.logText}><Text style={styles.logLabel}>Operator:</Text> {log.call_operator_name || log.call_operator_id || 'Unknown'}</Text>
-                  <Text style={styles.logText}><Text style={styles.logLabel}>Reason:</Text> {log.reason || 'N/A'}</Text>
+            <View style={styles.section}>
+              <View style={styles.sectionHeader}>
+                <Clock size={22} color={theme.primary} />
+                <Text style={styles.sectionTitle}>Call Later History</Text>
+              </View>
+              {paginatedCallLaterLogs.length > 0 ? (
+                paginatedCallLaterLogs.map(log => (
+                  <View key={log.id} style={styles.logCard}>
+                    <Text style={styles.logText}><Text style={styles.logLabel}>Date:</Text> {new Date(log.call_later_date || log.createdAt).toLocaleDateString()}</Text>
+                    <Text style={styles.logText}><Text style={styles.logLabel}>Time:</Text> {new Date(log.call_later_date || log.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
+                    <Text style={styles.logText}><Text style={styles.logLabel}>Operator:</Text> {log.call_operator_name || log.call_operator_id || 'Unknown'}</Text>
+                    <Text style={styles.logText}><Text style={styles.logLabel}>Reason:</Text> {log.reason || 'N/A'}</Text>
+                  </View>
+                ))
+              ) : (
+                <View style={styles.logCard}>
+                  <Text style={styles.noLogsText}>No call later logs found for this lead.</Text>
                 </View>
-              ))
-            ) : (
-              <View style={styles.logCard}>
-                <Text style={styles.noLogsText}>No call later logs found for this lead.</Text>
-              </View>
-            )}
-            {/* Pagination Controls */}
-            {callLaterTotalPages > 1 && (
-              <View style={styles.paginationContainer}>
-                <TouchableOpacity
-                  style={[styles.paginationButton, callLaterPage === 1 && styles.paginationDisabled]}
-                  onPress={() => setCallLaterPage(p => Math.max(1, p - 1))}
-                  disabled={callLaterPage === 1}
-                >
-                  <Text style={styles.paginationText}>Previous</Text>
-                </TouchableOpacity>
-                <Text style={[styles.paginationText, { color: theme.text }]}>Page {callLaterPage} of {callLaterTotalPages}</Text>
-                <TouchableOpacity
-                  style={[styles.paginationButton, callLaterPage === callLaterTotalPages && styles.paginationDisabled]}
-                  onPress={() => setCallLaterPage(p => Math.min(callLaterTotalPages, p + 1))}
-                  disabled={callLaterPage === callLaterTotalPages}
-                >
-                  <Text style={styles.paginationText}>Next</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-          </View>
-        </ScrollView>
-        {/* Call Later Modal */}
+              )}
+              {callLaterTotalPages > 1 && (
+                <View style={styles.paginationContainer}>
+                  <TouchableOpacity
+                    style={[styles.paginationButton, callLaterPage === 1 && styles.paginationDisabled]}
+                    onPress={() => setCallLaterPage(p => Math.max(1, p - 1))}
+                    disabled={callLaterPage === 1}
+                  >
+                    <Text style={styles.paginationText}>Previous</Text>
+                  </TouchableOpacity>
+                  <Text style={[styles.paginationText, { color: theme.text }]}>Page {callLaterPage} of {callLaterTotalPages}</Text>
+                  <TouchableOpacity
+                    style={[styles.paginationButton, callLaterPage === callLaterTotalPages && styles.paginationDisabled]}
+                    onPress={() => setCallLaterPage(p => Math.min(callLaterTotalPages, p + 1))}
+                    disabled={callLaterPage === callLaterTotalPages}
+                  >
+                    <Text style={styles.paginationText}>Next</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </View>
+          </ScrollView>
+        </View>
         <Modal visible={showCallLaterModal} transparent animationType="slide" onRequestClose={() => setShowCallLaterModal(false)}>
           <View style={styles.modalOverlay}>
-            <View style={styles.modalContent}>
+            <View style={[styles.modalContent, { maxWidth: 600 }]}>
               <View style={styles.modalHeader}>
                 <Text style={styles.modalTitle}>Log Call Later</Text>
                 <TouchableOpacity onPress={() => setShowCallLaterModal(false)} style={styles.modalCloseButton}>
@@ -313,10 +303,9 @@ const SuperAdminLeadInfo = ({ routerBase = '/(super_admin)' }) => {
             </View>
           </View>
         </Modal>
-        {/* Logs Modal */}
         <Modal visible={showLogsModal} transparent animationType="slide" onRequestClose={() => setShowLogsModal(false)}>
           <View style={styles.modalOverlay}>
-            <View style={[styles.modalContent, { maxHeight: '80%' }]}>
+            <View style={[styles.modalContent, { maxWidth: 600, maxHeight: '80%' }]}>
               <View style={styles.modalHeader}>
                 <Text style={styles.modalTitle}>Logs for {lead.customer_name}</Text>
                 <TouchableOpacity onPress={() => setShowLogsModal(false)} style={styles.modalCloseButton}>
@@ -348,7 +337,6 @@ const SuperAdminLeadInfo = ({ routerBase = '/(super_admin)' }) => {
   );
 };
 
-// Re-defining getStyles to be more modular and consistent
 const getStyles = (theme: any) => {
     const shadowStyle = {
       shadowColor: 'rgba(0,0,0,0.08)',
@@ -381,6 +369,13 @@ const getStyles = (theme: any) => {
         fontSize: 16,
         fontWeight: '600',
       },
+      contentWrapper: {
+        flex: 1,
+        alignSelf: 'center',
+        width: '100%',
+        maxWidth: 900, // Constrain width for readability on large screens
+        padding: 20,
+      },
       container: {
         flex: 1,
       },
@@ -389,7 +384,7 @@ const getStyles = (theme: any) => {
         alignItems: 'center',
         paddingTop: 56,
         paddingBottom: 16,
-        paddingHorizontal: 16,
+        paddingHorizontal: 20, // Use horizontal padding for consistency
         borderBottomWidth: StyleSheet.hairlineWidth,
         borderBottomColor: theme.border,
       },
@@ -404,18 +399,19 @@ const getStyles = (theme: any) => {
         color: theme.text,
       },
       contentContainer: {
-        padding: 20,
+        paddingTop: 0,
+        paddingBottom: 20,
       },
       actionButtonContainer: {
         flexDirection: 'row',
-        justifyContent: 'space-around',
+        justifyContent: 'center', // Center buttons on wide screen
         alignItems: 'center',
         padding: 16,
         backgroundColor: theme.surface,
         ...shadowStyle,
         marginBottom: 20,
-        marginHorizontal: 20,
         borderRadius: 16,
+        gap: 24, // Use gap for spacing between buttons
       },
       actionButton: {
         padding: 12,
@@ -440,30 +436,32 @@ const getStyles = (theme: any) => {
       infoCard: {
         backgroundColor: theme.surface,
         borderRadius: 16,
-        padding: 20,
+        paddingHorizontal: 20,
+        paddingVertical: 12,
         ...shadowStyle,
       },
       infoRow: {
         flexDirection: 'row',
         alignItems: 'center',
-        justifyContent: 'space-between',
-        marginBottom: 12,
+        // Removed justifyContent: 'space-between'
+        marginBottom: 8,
         borderBottomWidth: StyleSheet.hairlineWidth,
         borderBottomColor: theme.border,
-        paddingBottom: 12,
+        paddingVertical: 8,
       },
       infoLabel: {
         fontWeight: '500',
         color: theme.textSecondary,
         fontSize: 15,
-        minWidth: 120,
+        minWidth: 120, // Give the label a fixed minWidth
+        marginRight: 12, // Add a gap between label and value
       },
       infoValue: {
         fontWeight: 'normal',
         color: theme.text,
         fontSize: 15,
-        flex: 1,
-        textAlign: 'right',
+        flex: 1, // Allow the value to take up remaining space
+        textAlign: 'left', // Align values to the left
       },
       logCard: {
         backgroundColor: theme.surface,
@@ -523,7 +521,7 @@ const getStyles = (theme: any) => {
         borderRadius: 20,
         padding: 24,
         width: '90%',
-        maxWidth: 400,
+        maxWidth: 600, // Increased max width for desktop
         ...shadowStyle,
       },
       modalHeader: {
