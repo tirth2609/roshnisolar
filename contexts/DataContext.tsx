@@ -137,6 +137,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         salesman_name: lead.salesman_name,
         call_operator_id: lead.call_operator_id,
         call_operator_name: lead.call_operator_name,
+        created_by_name: lead.created_by?.name || '-',
         technician_id: lead.technician_id,
         technician_name: lead.technician_name,
         call_notes: lead.call_notes,
