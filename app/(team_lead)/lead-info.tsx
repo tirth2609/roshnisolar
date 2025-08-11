@@ -31,7 +31,6 @@ console.log('Lead object:', lead);
 console.log('created_by_name:', lead?.created_by_name);
 console.log('call_operator_name:', lead?.call_operator_name);
 console.log('technician_name:', lead?.technician_name);
-console.log('modified_by_name:', lead?.modified_by_name);
 
   // Call Logs Pagination
   const [logPage, setLogPage] = React.useState(1);
