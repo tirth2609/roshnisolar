@@ -27,10 +27,7 @@ const SuperAdminLeadInfo = ({ routerBase = '/(super_admin)' }) => {
     if (!leadId || leads.length === 0) return null;
     return leads.find(l => String(l.id) === String(leadId));
   }, [leadId, leads]);
-console.log('Lead object:', lead);
-console.log('created_by_name:', lead?.created_by_name);
-console.log('call_operator_name:', lead?.call_operator_name);
-console.log('technician_name:', lead?.technician_name);
+
 
   // Call Logs Pagination
   const [logPage, setLogPage] = React.useState(1);
