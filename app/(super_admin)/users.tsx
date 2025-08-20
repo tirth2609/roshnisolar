@@ -9,13 +9,13 @@ import {
   Alert,
   Modal,
   TextInput,
-  Dimensions, // Import Dimensions for screen width
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import {
-  Users,
-  Plus,
-  Search,
+import { useRouter } from 'expo-router';
+import { 
+  Users, 
+  Plus, 
+  Search, 
   Filter,
   Edit,
   Trash2,
@@ -37,8 +37,6 @@ import { useData } from '@/contexts/DataContext';
 import { UserRole } from '@/types/auth';
 import { Picker } from '@react-native-picker/picker';
 
-const { width } = Dimensions.get('window'); // Get current screen width
-
 const roleColors = {
   salesman: { bg: '#FEF3C7', text: '#92400E', border: '#F59E0B' },
   call_operator: { bg: '#DBEAFE', text: '#1E40AF', border: '#3B82F6' },
@@ -48,18 +46,19 @@ const roleColors = {
 };
 
 export default function UsersManagementScreen() {
-  const {
-    getAllUsers,
-    addUser,
-    updateUser,
-    deleteUser,
+  const router = useRouter();
+  const { 
+    getAllUsers, 
+    addUser, 
+    updateUser, 
+    deleteUser, 
     toggleUserStatus,
     getUserLeads,
     getUserWorkStats,
-    isLoading,
-    refreshData
+    isLoading, 
+    refreshData 
   } = useData();
-
+  
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedRole, setSelectedRole] = useState<UserRole | 'all'>('all');
   const [showAddModal, setShowAddModal] = useState(false);
@@ -76,12 +75,16 @@ export default function UsersManagementScreen() {
   });
 
   const users = getAllUsers();
+
+  const navigateToUserDetails = (id: string | number) => {
+    router.push({ pathname: '/user/[id]', params: { id: String(id) } } as any);
+  };
   const filteredUsers = users.filter(user => {
     if (!user || !user.name || !user.email) {
       return false;
     }
     const matchesSearch = user.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          user.email.toLowerCase().includes(searchQuery.toLowerCase());
+                         user.email.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesRole = selectedRole === 'all' || user.role === selectedRole;
     return matchesSearch && matchesRole;
   });
@@ -103,7 +106,7 @@ export default function UsersManagementScreen() {
   const getDateRange = (period: 'daily' | 'weekly' | 'monthly') => {
     const now = new Date();
     const start = new Date();
-
+    
     switch (period) {
       case 'daily':
         start.setHours(0, 0, 0, 0);
@@ -115,7 +118,7 @@ export default function UsersManagementScreen() {
         start.setMonth(now.getMonth() - 1);
         break;
     }
-
+    
     return { start, end: now };
   };
 
@@ -123,80 +126,80 @@ export default function UsersManagementScreen() {
     const { start, end } = getDateRange(period);
     const userLeads = getUserLeads(user.id);
     const workStats = getUserWorkStats(user.id);
-
+    
     const periodLeads = userLeads.filter(lead => {
       const leadDate = new Date(lead.created_at);
       return leadDate >= start && leadDate <= end;
     });
-
+    
     const periodUpdatedLeads = userLeads.filter(lead => {
       const leadDate = new Date(lead.updated_at);
       return leadDate >= start && leadDate <= end;
     });
-
+    
     switch (user.role) {
       case 'salesman':
         const periodSalesLeads = periodLeads.filter(lead => lead.salesman_id === user.id);
         const completedSalesLeads = periodSalesLeads.filter(lead => lead.status === 'completed');
         const totalSalesLeads = userLeads.filter(lead => lead.salesman_id === user.id);
         const totalCompletedSales = totalSalesLeads.filter(lead => lead.status === 'completed');
-
+        
         return {
           periodWork: periodSalesLeads.length,
           periodCompleted: completedSalesLeads.length,
           totalWork: totalSalesLeads.length,
           totalCompleted: totalCompletedSales.length,
-          conversionRate: totalSalesLeads.length > 0
+          conversionRate: totalSalesLeads.length > 0 
             ? ((totalCompletedSales.length / totalSalesLeads.length) * 100).toFixed(1)
             : '0',
-          periodConversionRate: periodSalesLeads.length > 0
+          periodConversionRate: periodSalesLeads.length > 0 
             ? ((completedSalesLeads.length / periodSalesLeads.length) * 100).toFixed(1)
             : '0'
         };
-
+      
       case 'call_operator':
         const periodCallLeads = periodUpdatedLeads.filter(lead => lead.call_operator_id === user.id);
         const completedCallLeads = periodCallLeads.filter(lead => lead.status === 'completed');
         const totalCallLeads = userLeads.filter(lead => lead.call_operator_id === user.id);
         const totalCompletedCalls = totalCallLeads.filter(lead => lead.status === 'completed');
-
+        
         return {
           periodWork: periodCallLeads.length,
           periodCompleted: completedCallLeads.length,
           totalWork: totalCallLeads.length,
           totalCompleted: totalCompletedCalls.length,
-          conversionRate: totalCallLeads.length > 0
+          conversionRate: totalCallLeads.length > 0 
             ? ((totalCompletedCalls.length / totalCallLeads.length) * 100).toFixed(1)
             : '0',
-          periodConversionRate: periodCallLeads.length > 0
+          periodConversionRate: periodCallLeads.length > 0 
             ? ((completedCallLeads.length / periodCallLeads.length) * 100).toFixed(1)
             : '0'
         };
-
+      
       case 'technician':
         const periodTechLeads = periodUpdatedLeads.filter(lead => lead.technician_id === user.id);
         const completedTechLeads = periodTechLeads.filter(lead => lead.status === 'completed');
         const totalTechLeads = userLeads.filter(lead => lead.technician_id === user.id);
         const totalCompletedTech = totalTechLeads.filter(lead => lead.status === 'completed');
-
+        
         return {
           periodWork: periodTechLeads.length,
           periodCompleted: completedTechLeads.length,
           totalWork: totalTechLeads.length,
           totalCompleted: totalCompletedTech.length,
-          conversionRate: totalTechLeads.length > 0
+          conversionRate: totalTechLeads.length > 0 
             ? ((totalCompletedTech.length / totalTechLeads.length) * 100).toFixed(1)
             : '0',
-          periodConversionRate: periodTechLeads.length > 0
+          periodConversionRate: periodTechLeads.length > 0 
             ? ((completedTechLeads.length / periodTechLeads.length) * 100).toFixed(1)
             : '0'
         };
-
+      
       case 'team_lead':
         const teamMembers = users.filter(u => u.role === 'call_operator' && u.is_active);
         const periodManagedLeads = periodLeads.length;
         const totalManagedLeads = userLeads.length;
-
+        
         return {
           periodWork: periodManagedLeads,
           periodCompleted: 0, // Team leads don't directly complete leads
@@ -206,7 +209,7 @@ export default function UsersManagementScreen() {
           periodConversionRate: 'N/A',
           teamMembers: teamMembers.length
         };
-
+      
       default:
         return {
           periodWork: 0,
@@ -328,12 +331,9 @@ export default function UsersManagementScreen() {
 
   const UserCard = ({ user }: { user: any }) => {
     return (
-      <TouchableOpacity
+      <TouchableOpacity 
         style={styles.userCard}
-        onPress={() => {
-          setSelectedUser(user);
-          setShowUserDetailsModal(true);
-        }}
+        onPress={() => navigateToUserDetails(user.id)}
       >
         <View style={styles.userHeader}>
           <View style={styles.userInfo}>
@@ -349,7 +349,7 @@ export default function UsersManagementScreen() {
           </View>
           <View style={styles.userStatus}>
             <View style={[
-              styles.statusDot,
+              styles.statusDot, 
               { backgroundColor: user.is_active ? '#10B981' : '#EF4444' }
             ]} />
           </View>
@@ -382,8 +382,8 @@ export default function UsersManagementScreen() {
             ) : (
               <UserCheck size={16} color="#10B981" />
             )}
-            <Text style={[styles.actionButtonText, {
-              color: user.is_active ? '#F59E0B' : '#10B981'
+            <Text style={[styles.actionButtonText, { 
+              color: user.is_active ? '#F59E0B' : '#10B981' 
             }]}>
               {user.is_active ? 'Deactivate' : 'Activate'}
             </Text>
@@ -550,47 +550,47 @@ export default function UsersManagementScreen() {
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Add New User</Text>
-
+            
             <View style={styles.formContainer}>
               <TextInput
                 style={styles.input}
                 placeholder="Full Name *"
                 value={newUser.name}
-                onChangeText={(text) => setNewUser({ ...newUser, name: text })}
+                onChangeText={(text) => setNewUser({...newUser, name: text})}
               />
-
+              
               <TextInput
                 style={styles.input}
                 placeholder="Email Address *"
                 value={newUser.email}
-                onChangeText={(text) => setNewUser({ ...newUser, email: text })}
+                onChangeText={(text) => setNewUser({...newUser, email: text})}
                 keyboardType="email-address"
                 autoCapitalize="none"
               />
-
+              
               <TextInput
                 style={styles.input}
                 placeholder="Password *"
                 value={newUser.password}
-                onChangeText={(text) => setNewUser({ ...newUser, password: text })}
+                onChangeText={(text) => setNewUser({...newUser, password: text})}
                 secureTextEntry
                 autoCapitalize="none"
               />
-
+              
               <TextInput
                 style={styles.input}
                 placeholder="Phone Number *"
                 value={newUser.phone}
-                onChangeText={(text) => setNewUser({ ...newUser, phone: text })}
+                onChangeText={(text) => setNewUser({...newUser, phone: text})}
                 keyboardType="phone-pad"
               />
 
               <Text style={styles.roleLabel}>Role</Text>
-              <View style={styles.pickerContainer}> {/* Use pickerContainer style */}
+              <View style={{ backgroundColor: '#F8FAFC', borderRadius: 8, borderWidth: 1, borderColor: '#E2E8F0', marginBottom: 16 }}>
                 <Picker
                   selectedValue={newUser.role}
                   onValueChange={(itemValue) => setNewUser({ ...newUser, role: itemValue as UserRole })}
-                  style={styles.pickerStyle} // Apply picker style
+                  style={{ height: 48 }}
                 >
                   {Object.keys(roleColors).map((role) => (
                     <Picker.Item
@@ -631,29 +631,29 @@ export default function UsersManagementScreen() {
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Edit User</Text>
-
+            
             <View style={styles.formContainer}>
               <TextInput
                 style={styles.input}
                 placeholder="Full Name *"
                 value={selectedUser?.name || ''}
-                onChangeText={(text) => setSelectedUser({ ...selectedUser, name: text })}
+                onChangeText={(text) => setSelectedUser({...selectedUser, name: text})}
               />
-
+              
               <TextInput
                 style={styles.input}
                 placeholder="Email Address *"
                 value={selectedUser?.email || ''}
-                onChangeText={(text) => setSelectedUser({ ...selectedUser, email: text })}
+                onChangeText={(text) => setSelectedUser({...selectedUser, email: text})}
                 keyboardType="email-address"
                 autoCapitalize="none"
               />
-
+              
               <TextInput
                 style={styles.input}
                 placeholder="Phone Number *"
                 value={selectedUser?.phone || ''}
-                onChangeText={(text) => setSelectedUser({ ...selectedUser, phone: text })}
+                onChangeText={(text) => setSelectedUser({...selectedUser, phone: text})}
                 keyboardType="phone-pad"
               />
 
@@ -662,17 +662,17 @@ export default function UsersManagementScreen() {
                 style={styles.input}
                 placeholder="Change Password (leave blank to keep current)"
                 value={selectedUser?.password || ''}
-                onChangeText={(text) => setSelectedUser({ ...selectedUser, password: text })}
+                onChangeText={(text) => setSelectedUser({...selectedUser, password: text})}
                 secureTextEntry
                 autoCapitalize="none"
               />
 
               <Text style={styles.roleLabel}>Role</Text>
-              <View style={styles.pickerContainer}> {/* Use pickerContainer style */}
+              <View style={{ backgroundColor: '#F8FAFC', borderRadius: 8, borderWidth: 1, borderColor: '#E2E8F0', marginBottom: 16 }}>
                 <Picker
                   selectedValue={selectedUser?.role}
                   onValueChange={(itemValue) => setSelectedUser({ ...selectedUser, role: itemValue as UserRole })}
-                  style={styles.pickerStyle} // Apply picker style
+                  style={{ height: 48 }}
                 >
                   {Object.keys(roleColors).map((role) => (
                     <Picker.Item
@@ -703,7 +703,7 @@ export default function UsersManagementScreen() {
         </View>
       </Modal>
 
-      {/* User Details Modal (Laptop Web View Optimized) */}
+      {/* User Details Modal */}
       <Modal
         visible={showUserDetailsModal}
         transparent
@@ -711,216 +711,206 @@ export default function UsersManagementScreen() {
         onRequestClose={() => setShowUserDetailsModal(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalContentWeb, { maxWidth: width * 0.7, minWidth: 700 }]}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>User Details</Text>
+            
             {selectedUser && (
-              <ScrollView showsVerticalScrollIndicator={false}>
-                <View style={styles.modalHeaderWeb}>
-                  <Text style={styles.modalTitleWeb}>User Details</Text>
-                  <TouchableOpacity
-                    style={styles.closeIconButtonWeb}
-                    onPress={() => setShowUserDetailsModal(false)}
-                  >
-                    <X size={20} color="#64748B" />
-                  </TouchableOpacity>
+              <View style={styles.userDetailsContainer}>
+                {/* User Header */}
+                <View style={styles.userDetailsHeader}>
+                  <View style={styles.userDetailsAvatar}>
+                    <Text style={styles.userDetailsAvatarText}>
+                      {selectedUser.name.split(' ').map((n: string) => n[0]).join('')}
+                    </Text>
+                  </View>
+                  <View style={styles.userDetailsInfo}>
+                    <Text style={styles.userDetailsName}>{selectedUser.name}</Text>
+                    <RoleBadge role={selectedUser.role} />
+                    <Text style={styles.userDetailsEmail}>{selectedUser.email}</Text>
+                    <Text style={styles.userDetailsPhone}>{selectedUser.phone}</Text>
+                  </View>
                 </View>
 
-                <View style={styles.userDetailsSectionWeb}>
-                  {/* User Header */}
-                  <View style={styles.userDetailsHeaderWeb}>
-                    <View style={styles.userDetailsAvatarWeb}>
-                      <Text style={styles.userDetailsAvatarText}>
-                        {selectedUser.name.split(' ').map((n: string) => n[0]).join('')}
-                      </Text>
-                    </View>
-                    <View style={styles.userDetailsInfoWeb}>
-                      <Text style={styles.userDetailsNameWeb}>{selectedUser.name}</Text>
-                      <RoleBadge role={selectedUser.role} />
-                      <Text style={styles.userDetailsEmailWeb}>{selectedUser.email}</Text>
-                      <Text style={styles.userDetailsPhoneWeb}>{selectedUser.phone}</Text>
-                    </View>
+                {/* Work Analytics Section */}
+                <View style={styles.workAnalyticsSection}>
+                  <View style={styles.sectionHeader}>
+                    <Text style={styles.sectionTitle}>Work Analytics</Text>
+                    <TouchableOpacity
+                      style={styles.analyticsButton}
+                      onPress={() => {
+                        setShowUserDetailsModal(false);
+                        setShowAnalyticsModal(true);
+                      }}
+                    >
+                      <BarChart3 size={16} color="#3B82F6" />
+                      <Text style={styles.analyticsButtonText}>Detailed View</Text>
+                    </TouchableOpacity>
                   </View>
 
-                  {/* Work Analytics Section */}
-                  <View style={styles.workAnalyticsSectionWeb}>
-                    <View style={styles.sectionHeaderWeb}>
-                      <Text style={styles.sectionTitleWeb}>Work Analytics</Text>
-                      <TouchableOpacity
-                        style={styles.analyticsButtonWeb}
-                        onPress={() => {
-                          setShowUserDetailsModal(false);
-                          setShowAnalyticsModal(true);
-                        }}
-                      >
-                        <BarChart3 size={16} color="#3B82F6" />
-                        <Text style={styles.analyticsButtonTextWeb}>Detailed View</Text>
-                      </TouchableOpacity>
-                    </View>
-
-                    {/* Today's Performance */}
-                    <View style={styles.performanceCardWeb}>
-                      <Text style={styles.performanceTitleWeb}>Today's Performance</Text>
-                      {(() => {
-                        const workStats = getUserWorkStatistics(selectedUser, 'daily');
-                        switch (selectedUser.role) {
-                          case 'salesman':
-                            return (
-                              <View style={styles.workStatsBackgroundWeb}>
-                                <View style={styles.workStatsRowWeb}>
-                                  <View style={styles.workStatCardWeb}>
-                                    <Text style={styles.workStatNumberWeb}>{workStats.periodWork}</Text>
-                                    <Text style={styles.workStatLabelWeb}>Leads Generated</Text>
-                                  </View>
-                                  <View style={styles.workStatCardWeb}>
-                                    <Text style={styles.workStatNumberWeb}>{workStats.periodCompleted}</Text>
-                                    <Text style={styles.workStatLabelWeb}>Converted</Text>
-                                  </View>
+                  {/* Today's Performance */}
+                  <View style={styles.performanceCard}>
+                    <Text style={styles.performanceTitle}>Today's Performance</Text>
+                    {(() => {
+                      const workStats = getUserWorkStatistics(selectedUser, 'daily');
+                      switch (selectedUser.role) {
+                        case 'salesman':
+                          return (
+                            <View style={styles.workStatsBackground}>
+                              <View style={styles.workStatsRow}>
+                                <View style={styles.workStatCard}>
+                                  <Text style={styles.workStatNumber}>{workStats.periodWork}</Text>
+                                  <Text style={styles.workStatLabel}>Leads Generated</Text>
                                 </View>
-                                <View style={styles.workStatsRowWeb}>
-                                  <View style={styles.workStatCardWeb}>
-                                    <Text style={styles.workStatNumberWeb}>{workStats.periodConversionRate}%</Text>
-                                    <Text style={styles.workStatLabelWeb}>Today's Rate</Text>
-                                  </View>
-                                  <View style={styles.workStatCardWeb}>
-                                    <Text style={styles.workStatNumberWeb}>{workStats.conversionRate}%</Text>
-                                    <Text style={styles.workStatLabelWeb}>Overall Rate</Text>
-                                  </View>
+                                <View style={styles.workStatCard}>
+                                  <Text style={styles.workStatNumber}>{workStats.periodCompleted}</Text>
+                                  <Text style={styles.workStatLabel}>Converted</Text>
                                 </View>
                               </View>
-                            );
-
-                          case 'call_operator':
-                            return (
-                              <View style={styles.workStatsBackgroundWeb}>
-                                <View style={styles.workStatsRowWeb}>
-                                  <View style={styles.workStatCardWeb}>
-                                    <Text style={styles.workStatNumberWeb}>{workStats.periodWork}</Text>
-                                    <Text style={styles.workStatLabelWeb}>Calls Made</Text>
-                                  </View>
-                                  <View style={styles.workStatCardWeb}>
-                                    <Text style={styles.workStatNumberWeb}>{workStats.periodCompleted}</Text>
-                                    <Text style={styles.workStatLabelWeb}>Successful</Text>
-                                  </View>
+                              <View style={styles.workStatsRowLast}>
+                                <View style={styles.workStatCard}>
+                                  <Text style={styles.workStatNumber}>{workStats.periodConversionRate}%</Text>
+                                  <Text style={styles.workStatLabel}>Today's Rate</Text>
                                 </View>
-                                <View style={styles.workStatsRowWeb}>
-                                  <View style={styles.workStatCardWeb}>
-                                    <Text style={styles.workStatNumberWeb}>{workStats.periodConversionRate}%</Text>
-                                    <Text style={styles.workStatLabelWeb}>Success Rate</Text>
-                                  </View>
-                                  <View style={styles.workStatCardWeb}>
-                                    <Text style={styles.workStatNumberWeb}>{workStats.conversionRate}%</Text>
-                                    <Text style={styles.workStatLabelWeb}>Overall Rate</Text>
-                                  </View>
+                                <View style={styles.workStatCard}>
+                                  <Text style={styles.workStatNumber}>{workStats.conversionRate}%</Text>
+                                  <Text style={styles.workStatLabel}>Overall Rate</Text>
                                 </View>
                               </View>
-                            );
-
-                          case 'technician':
-                            return (
-                              <View style={styles.workStatsBackgroundWeb}>
-                                <View style={styles.workStatsRowWeb}>
-                                  <View style={styles.workStatCardWeb}>
-                                    <Text style={styles.workStatNumberWeb}>{workStats.periodWork}</Text>
-                                    <Text style={styles.workStatLabelWeb}>Site Visits</Text>
-                                  </View>
-                                  <View style={styles.workStatCardWeb}>
-                                    <Text style={styles.workStatNumberWeb}>{workStats.periodCompleted}</Text>
-                                    <Text style={styles.workStatLabelWeb}>Completed</Text>
-                                  </View>
+                            </View>
+                          );
+                        
+                        case 'call_operator':
+                          return (
+                            <View style={styles.workStatsBackground}>
+                              <View style={styles.workStatsRow}>
+                                <View style={styles.workStatCard}>
+                                  <Text style={styles.workStatNumber}>{workStats.periodWork}</Text>
+                                  <Text style={styles.workStatLabel}>Calls Made</Text>
                                 </View>
-                                <View style={styles.workStatsRowWeb}>
-                                  <View style={styles.workStatCardWeb}>
-                                    <Text style={styles.workStatNumberWeb}>{workStats.periodConversionRate}%</Text>
-                                    <Text style={styles.workStatLabelWeb}>Completion Rate</Text>
-                                  </View>
-                                  <View style={styles.workStatCardWeb}>
-                                    <Text style={styles.workStatNumberWeb}>{workStats.conversionRate}%</Text>
-                                    <Text style={styles.workStatLabelWeb}>Overall Rate</Text>
-                                  </View>
+                                <View style={styles.workStatCard}>
+                                  <Text style={styles.workStatNumber}>{workStats.periodCompleted}</Text>
+                                  <Text style={styles.workStatLabel}>Successful</Text>
                                 </View>
                               </View>
-                            );
-
-                          case 'team_lead':
-                            return (
-                              <View style={styles.workStatsBackgroundWeb}>
-                                <View style={styles.workStatsRowWeb}>
-                                  <View style={styles.workStatCardWeb}>
-                                    <Text style={styles.workStatNumberWeb}>{workStats.teamMembers || 0}</Text>
-                                    <Text style={styles.workStatLabelWeb}>Team Members</Text>
-                                  </View>
-                                  <View style={styles.workStatCardWeb}>
-                                    <Text style={styles.workStatNumberWeb}>{workStats.periodWork}</Text>
-                                    <Text style={styles.workStatLabelWeb}>Leads Managed</Text>
-                                  </View>
+                              <View style={styles.workStatsRowLast}>
+                                <View style={styles.workStatCard}>
+                                  <Text style={styles.workStatNumber}>{workStats.periodConversionRate}%</Text>
+                                  <Text style={styles.workStatLabel}>Success Rate</Text>
                                 </View>
-                                <View style={styles.workStatsRowWeb}>
-                                  <View style={styles.workStatCardWeb}>
-                                    <Text style={styles.workStatNumberWeb}>{workStats.totalWork}</Text>
-                                    <Text style={styles.workStatLabelWeb}>Total Managed</Text>
-                                  </View>
-                                  <View style={styles.workStatCardWeb}>
-                                    <Text style={styles.workStatNumberWeb}>-</Text>
-                                    <Text style={styles.workStatLabelWeb}>Team Performance</Text>
-                                  </View>
+                                <View style={styles.workStatCard}>
+                                  <Text style={styles.workStatNumber}>{workStats.conversionRate}%</Text>
+                                  <Text style={styles.workStatLabel}>Overall Rate</Text>
                                 </View>
                               </View>
-                            );
-
-                          default:
-                            return (
-                              <View style={styles.workStatsBackgroundWeb}>
-                                <View style={styles.workStatsRowWeb}>
-                                  <View style={styles.workStatCardWeb}>
-                                    <Text style={styles.workStatNumberWeb}>0</Text>
-                                    <Text style={styles.workStatLabelWeb}>No Data</Text>
-                                  </View>
+                            </View>
+                          );
+                        
+                        case 'technician':
+                          return (
+                            <View style={styles.workStatsBackground}>
+                              <View style={styles.workStatsRow}>
+                                <View style={styles.workStatCard}>
+                                  <Text style={styles.workStatNumber}>{workStats.periodWork}</Text>
+                                  <Text style={styles.workStatLabel}>Site Visits</Text>
+                                </View>
+                                <View style={styles.workStatCard}>
+                                  <Text style={styles.workStatNumber}>{workStats.periodCompleted}</Text>
+                                  <Text style={styles.workStatLabel}>Completed</Text>
                                 </View>
                               </View>
-                            );
-                        }
-                      })()}
-                    </View>
+                              <View style={styles.workStatsRowLast}>
+                                <View style={styles.workStatCard}>
+                                  <Text style={styles.workStatNumber}>{workStats.periodConversionRate}%</Text>
+                                  <Text style={styles.workStatLabel}>Completion Rate</Text>
+                                </View>
+                                <View style={styles.workStatCard}>
+                                  <Text style={styles.workStatNumber}>{workStats.conversionRate}%</Text>
+                                  <Text style={styles.workStatLabel}>Overall Rate</Text>
+                                </View>
+                              </View>
+                            </View>
+                          );
+                        
+                        case 'team_lead':
+                          return (
+                            <View style={styles.workStatsBackground}>
+                              <View style={styles.workStatsRow}>
+                                <View style={styles.workStatCard}>
+                                  <Text style={styles.workStatNumber}>{workStats.teamMembers || 0}</Text>
+                                  <Text style={styles.workStatLabel}>Team Members</Text>
+                                </View>
+                                <View style={styles.workStatCard}>
+                                  <Text style={styles.workStatNumber}>{workStats.periodWork}</Text>
+                                  <Text style={styles.workStatLabel}>Leads Managed</Text>
+                                </View>
+                              </View>
+                              <View style={styles.workStatsRowLast}>
+                                <View style={styles.workStatCard}>
+                                  <Text style={styles.workStatNumber}>{workStats.totalWork}</Text>
+                                  <Text style={styles.workStatLabel}>Total Managed</Text>
+                                </View>
+                                <View style={styles.workStatCard}>
+                                  <Text style={styles.workStatNumber}>-</Text>
+                                  <Text style={styles.workStatLabel}>Team Performance</Text>
+                                </View>
+                              </View>
+                            </View>
+                          );
+                        
+                        default:
+                          return (
+                            <View style={styles.workStatsBackground}>
+                              <View style={styles.workStatsRow}>
+                                <View style={styles.workStatCard}>
+                                  <Text style={styles.workStatNumber}>0</Text>
+                                  <Text style={styles.workStatLabel}>No Data</Text>
+                                </View>
+                              </View>
+                            </View>
+                          );
+                      }
+                    })()}
+                  </View>
 
-                    {/* Weekly & Monthly Summary */}
-                    <View style={styles.summarySectionWeb}>
-                      <Text style={styles.summaryTitleWeb}>Performance Summary</Text>
-                      <View style={styles.summaryGridWeb}>
-                        <View style={styles.summaryCardWeb}>
-                          <Text style={styles.summaryLabelWeb}>This Week</Text>
-                          <Text style={styles.summaryNumberWeb}>
-                            {getUserWorkStatistics(selectedUser, 'weekly').periodWork}
-                          </Text>
-                          <Text style={styles.summarySubtextWeb}>
-                            {getWorkLabel(selectedUser.role, 'weekly')}
-                          </Text>
-                        </View>
-                        <View style={styles.summaryCardWeb}>
-                          <Text style={styles.summaryLabelWeb}>This Month</Text>
-                          <Text style={styles.summaryNumberWeb}>
-                            {getUserWorkStatistics(selectedUser, 'monthly').periodWork}
-                          </Text>
-                          <Text style={styles.summarySubtextWeb}>
-                            {getWorkLabel(selectedUser.role, 'monthly')}
-                          </Text>
-                        </View>
+                  {/* Weekly & Monthly Summary */}
+                  <View style={styles.summarySection}>
+                    <Text style={styles.summaryTitle}>Performance Summary</Text>
+                    <View style={styles.summaryGrid}>
+                      <View style={styles.summaryCard}>
+                        <Text style={styles.summaryLabel}>This Week</Text>
+                        <Text style={styles.summaryNumber}>
+                          {getUserWorkStatistics(selectedUser, 'weekly').periodWork}
+                        </Text>
+                        <Text style={styles.summarySubtext}>
+                          {getWorkLabel(selectedUser.role, 'weekly')}
+                        </Text>
+                      </View>
+                      <View style={styles.summaryCard}>
+                        <Text style={styles.summaryLabel}>This Month</Text>
+                        <Text style={styles.summaryNumber}>
+                          {getUserWorkStatistics(selectedUser, 'monthly').periodWork}
+                        </Text>
+                        <Text style={styles.summarySubtext}>
+                          {getWorkLabel(selectedUser.role, 'monthly')}
+                        </Text>
                       </View>
                     </View>
                   </View>
                 </View>
-              </ScrollView>
+              </View>
             )}
 
             <TouchableOpacity
-              style={styles.closeButtonWeb}
+              style={styles.closeButton}
               onPress={() => setShowUserDetailsModal(false)}
             >
-              <Text style={styles.closeButtonTextWeb}>Close</Text>
+              <Text style={styles.closeButtonText}>Close</Text>
             </TouchableOpacity>
           </View>
         </View>
       </Modal>
 
-      {/* Analytics Modal (Laptop Web View Optimized) */}
+      {/* Analytics Modal */}
       <Modal
         visible={showAnalyticsModal}
         transparent
@@ -928,11 +918,11 @@ export default function UsersManagementScreen() {
         onRequestClose={() => setShowAnalyticsModal(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalContentWeb, { maxWidth: width * 0.7, minWidth: 700 }]}>
-            <View style={styles.modalHeaderWeb}>
-              <Text style={styles.modalTitleWeb}>Work Analytics</Text>
+          <View style={[styles.modalContent, { maxWidth: 500 }]}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Work Analytics</Text>
               <TouchableOpacity
-                style={styles.closeIconButtonWeb}
+                style={styles.closeIconButton}
                 onPress={() => setShowAnalyticsModal(false)}
               >
                 <X size={20} color="#64748B" />
@@ -941,48 +931,48 @@ export default function UsersManagementScreen() {
 
             <ScrollView showsVerticalScrollIndicator={false}>
               {selectedUser && (
-                <View style={styles.analyticsContainerWeb}>
+                <View style={styles.analyticsContainer}>
                   {/* User Info Header */}
-                  <View style={styles.analyticsUserHeaderWeb}>
-                    <View style={styles.analyticsUserAvatarWeb}>
+                  <View style={styles.analyticsUserHeader}>
+                    <View style={styles.analyticsUserAvatar}>
                       <Text style={styles.analyticsUserAvatarText}>
                         {selectedUser.name.split(' ').map((n: string) => n[0]).join('')}
                       </Text>
                     </View>
-                    <View style={styles.analyticsUserInfoWeb}>
-                      <Text style={styles.analyticsUserNameWeb}>{selectedUser.name}</Text>
+                    <View style={styles.analyticsUserInfo}>
+                      <Text style={styles.analyticsUserName}>{selectedUser.name}</Text>
                       <RoleBadge role={selectedUser.role} />
-                      <Text style={styles.analyticsUserEmailWeb}>{selectedUser.email}</Text>
+                      <Text style={styles.analyticsUserEmail}>{selectedUser.email}</Text>
                     </View>
                   </View>
 
                   {/* Period Tabs */}
-                  <View style={styles.periodTabsWeb}>
+                  <View style={styles.periodTabs}>
                     {(['daily', 'weekly', 'monthly'] as const).map((period) => {
                       const stats = getUserWorkStatistics(selectedUser, period);
                       const periodLabel = period === 'daily' ? 'Today' : period === 'weekly' ? 'This Week' : 'This Month';
-
+                      
                       return (
-                        <View key={period} style={styles.periodTabWeb}>
-                          <Text style={styles.periodTabTitleWeb}>{periodLabel}</Text>
-
-                          <View style={styles.periodStatsGridWeb}>
-                            <View style={styles.periodStatCardWeb}>
+                        <View key={period} style={styles.periodTab}>
+                          <Text style={styles.periodTabTitle}>{periodLabel}</Text>
+                          
+                          <View style={styles.periodStatsGrid}>
+                            <View style={styles.periodStatCard}>
                               <Activity size={20} color="#F59E0B" />
-                              <Text style={styles.periodStatNumberWeb}>{stats.periodWork}</Text>
-                              <Text style={styles.periodStatLabelWeb}>{getWorkLabel(selectedUser.role, period)}</Text>
+                              <Text style={styles.periodStatNumber}>{stats.periodWork}</Text>
+                              <Text style={styles.periodStatLabel}>{getWorkLabel(selectedUser.role, period)}</Text>
                             </View>
-
-                            <View style={styles.periodStatCardWeb}>
+                            
+                            <View style={styles.periodStatCard}>
                               <CheckCircle size={20} color="#10B981" />
-                              <Text style={styles.periodStatNumberWeb}>{stats.periodCompleted}</Text>
-                              <Text style={styles.periodStatLabelWeb}>{getCompletedLabel(selectedUser.role)}</Text>
+                              <Text style={styles.periodStatNumber}>{stats.periodCompleted}</Text>
+                              <Text style={styles.periodStatLabel}>{getCompletedLabel(selectedUser.role)}</Text>
                             </View>
-
-                            <View style={styles.periodStatCardWeb}>
+                            
+                            <View style={styles.periodStatCard}>
                               <Target size={20} color="#8B5CF6" />
-                              <Text style={styles.periodStatNumberWeb}>{stats.periodConversionRate}%</Text>
-                              <Text style={styles.periodStatLabelWeb}>{periodLabel}'s Rate</Text>
+                              <Text style={styles.periodStatNumber}>{stats.periodConversionRate}%</Text>
+                              <Text style={styles.periodStatLabel}>{periodLabel}'s Rate</Text>
                             </View>
                           </View>
                         </View>
@@ -991,120 +981,120 @@ export default function UsersManagementScreen() {
                   </View>
 
                   {/* Overall Statistics */}
-                  <View style={styles.overallStatsSectionWeb}>
-                    <Text style={styles.overallStatsTitleWeb}>Overall Performance</Text>
-                    <View style={styles.overallStatsGridWeb}>
-                      <View style={styles.overallStatCardWeb}>
+                  <View style={styles.overallStatsSection}>
+                    <Text style={styles.overallStatsTitle}>Overall Performance</Text>
+                    <View style={styles.overallStatsGrid}>
+                      <View style={styles.overallStatCard}>
                         <TrendingUp size={20} color="#EF4444" />
-                        <Text style={styles.overallStatNumberWeb}>
+                        <Text style={styles.overallStatNumber}>
                           {getUserWorkStatistics(selectedUser, 'monthly').totalWork}
                         </Text>
-                        <Text style={styles.overallStatLabelWeb}>Total Work</Text>
+                        <Text style={styles.overallStatLabel}>Total Work</Text>
                       </View>
-
-                      <View style={styles.overallStatCardWeb}>
+                      
+                      <View style={styles.overallStatCard}>
                         <CheckCircle size={20} color="#10B981" />
-                        <Text style={styles.overallStatNumberWeb}>
+                        <Text style={styles.overallStatNumber}>
                           {getUserWorkStatistics(selectedUser, 'monthly').totalCompleted}
                         </Text>
-                        <Text style={styles.overallStatLabelWeb}>Total Completed</Text>
+                        <Text style={styles.overallStatLabel}>Total Completed</Text>
                       </View>
-
-                      <View style={styles.overallStatCardWeb}>
+                      
+                      <View style={styles.overallStatCard}>
                         <Target size={20} color="#8B5CF6" />
-                        <Text style={styles.overallStatNumberWeb}>
+                        <Text style={styles.overallStatNumber}>
                           {getUserWorkStatistics(selectedUser, 'monthly').conversionRate}%
                         </Text>
-                        <Text style={styles.overallStatLabelWeb}>Overall Rate</Text>
+                        <Text style={styles.overallStatLabel}>Overall Rate</Text>
                       </View>
                     </View>
                   </View>
 
                   {/* Role-specific Insights */}
-                  <View style={styles.insightsSectionWeb}>
-                    <Text style={styles.insightsTitleWeb}>Performance Insights</Text>
+                  <View style={styles.insightsSection}>
+                    <Text style={styles.insightsTitle}>Performance Insights</Text>
                     {(() => {
                       const dailyStats = getUserWorkStatistics(selectedUser, 'daily');
                       const weeklyStats = getUserWorkStatistics(selectedUser, 'weekly');
                       const monthlyStats = getUserWorkStatistics(selectedUser, 'monthly');
-
+                      
                       switch (selectedUser.role) {
                         case 'salesman':
                           return (
-                            <View style={styles.insightsContentWeb}>
-                              <Text style={styles.insightTextWeb}>
+                            <View style={styles.insightsContent}>
+                              <Text style={styles.insightText}>
                                 • {dailyStats.periodWork} leads generated today
                               </Text>
-                              <Text style={styles.insightTextWeb}>
+                              <Text style={styles.insightText}>
                                 • {dailyStats.periodCompleted} leads converted to customers today
                               </Text>
-                              <Text style={styles.insightTextWeb}>
+                              <Text style={styles.insightText}>
                                 • {dailyStats.periodConversionRate}% conversion rate today
                               </Text>
-                              <Text style={styles.insightTextWeb}>
+                              <Text style={styles.insightText}>
                                 • {monthlyStats.totalWork} total leads in the last month
                               </Text>
                             </View>
                           );
-
+                        
                         case 'call_operator':
                           return (
-                            <View style={styles.insightsContentWeb}>
-                              <Text style={styles.insightTextWeb}>
+                            <View style={styles.insightsContent}>
+                              <Text style={styles.insightText}>
                                 • {dailyStats.periodWork} calls made today
                               </Text>
-                              <Text style={styles.insightTextWeb}>
+                              <Text style={styles.insightText}>
                                 • {dailyStats.periodCompleted} calls resulted in conversions
                               </Text>
-                              <Text style={styles.insightTextWeb}>
+                              <Text style={styles.insightText}>
                                 • {dailyStats.periodConversionRate}% call success rate today
                               </Text>
-                              <Text style={styles.insightTextWeb}>
+                              <Text style={styles.insightText}>
                                 • {monthlyStats.totalWork} total calls in the last month
                               </Text>
                             </View>
                           );
-
+                        
                         case 'technician':
                           return (
-                            <View style={styles.insightsContentWeb}>
-                              <Text style={styles.insightTextWeb}>
+                            <View style={styles.insightsContent}>
+                              <Text style={styles.insightText}>
                                 • {dailyStats.periodWork} site visits today
                               </Text>
-                              <Text style={styles.insightTextWeb}>
+                              <Text style={styles.insightText}>
                                 • {dailyStats.periodCompleted} installations completed today
                               </Text>
-                              <Text style={styles.insightTextWeb}>
+                              <Text style={styles.insightText}>
                                 • {dailyStats.periodConversionRate}% completion rate today
                               </Text>
-                              <Text style={styles.insightTextWeb}>
+                              <Text style={styles.insightText}>
                                 • {monthlyStats.totalWork} total visits in the last month
                               </Text>
                             </View>
                           );
-
+                        
                         case 'team_lead':
                           return (
-                            <View style={styles.insightsContentWeb}>
-                              <Text style={styles.insightTextWeb}>
+                            <View style={styles.insightsContent}>
+                              <Text style={styles.insightText}>
                                 • Managing {dailyStats.teamMembers} team members
                               </Text>
-                              <Text style={styles.insightTextWeb}>
+                              <Text style={styles.insightText}>
                                 • {dailyStats.periodWork} leads managed today
                               </Text>
-                              <Text style={styles.insightTextWeb}>
+                              <Text style={styles.insightText}>
                                 • {monthlyStats.totalWork} total leads managed this month
                               </Text>
-                              <Text style={styles.insightTextWeb}>
+                              <Text style={styles.insightText}>
                                 • Team performance monitoring active
                               </Text>
                             </View>
                           );
-
+                        
                         default:
                           return (
-                            <View style={styles.insightsContentWeb}>
-                              <Text style={styles.insightTextWeb}>No specific insights available for this role.</Text>
+                            <View style={styles.insightsContent}>
+                              <Text style={styles.insightText}>No specific insights available for this role.</Text>
                             </View>
                           );
                       }
@@ -1115,10 +1105,10 @@ export default function UsersManagementScreen() {
             </ScrollView>
 
             <TouchableOpacity
-              style={styles.closeButtonWeb}
+              style={styles.closeButton}
               onPress={() => setShowAnalyticsModal(false)}
             >
-              <Text style={styles.closeButtonTextWeb}>Close</Text>
+              <Text style={styles.closeButtonText}>Close</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -1155,14 +1145,12 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     fontSize: 24,
-    // fontFamily: 'Inter-Bold', // Remove for web, use fontWeight instead
-    fontWeight: 'bold',
+    fontFamily: 'Inter-Bold',
     color: '#FFFFFF',
   },
   headerSubtitle: {
     fontSize: 14,
-    // fontFamily: 'Inter-Regular', // Remove for web, use fontWeight instead
-    fontWeight: 'normal',
+    fontFamily: 'Inter-Regular',
     color: '#FFFFFF',
     opacity: 0.9,
   },
@@ -1198,15 +1186,13 @@ const styles = StyleSheet.create({
   },
   statNumber: {
     fontSize: 18,
-    // fontFamily: 'Inter-Bold',
-    fontWeight: 'bold',
+    fontFamily: 'Inter-Bold',
     color: '#1E293B',
     marginTop: 8,
   },
   statLabel: {
     fontSize: 12,
-    // fontFamily: 'Inter-Medium',
-    fontWeight: '500', // Medium font weight
+    fontFamily: 'Inter-Medium',
     color: '#64748B',
     marginTop: 4,
   },
@@ -1234,8 +1220,7 @@ const styles = StyleSheet.create({
   searchInput: {
     flex: 1,
     fontSize: 16,
-    // fontFamily: 'Inter-Regular',
-    fontWeight: 'normal',
+    fontFamily: 'Inter-Regular',
     color: '#1E293B',
   },
   filterContainer: {
@@ -1260,8 +1245,7 @@ const styles = StyleSheet.create({
   },
   filterText: {
     fontSize: 14,
-    // fontFamily: 'Inter-Medium',
-    fontWeight: '500',
+    fontFamily: 'Inter-Medium',
     color: '#64748B',
   },
   filterTextActive: {
@@ -1273,17 +1257,12 @@ const styles = StyleSheet.create({
   usersList: {
     padding: 20,
     paddingTop: 0,
-    // For web, consider flexWrap if you want cards in a grid on wider screens
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'flex-start', // Align items to start
-    gap: 12, // Gap between cards
   },
   userCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
     padding: 16,
-    marginBottom: 12, // Keep some margin for vertical stacking, but flexWrap takes over horizontal
+    marginBottom: 12,
     shadowColor: '#000',
     shadowOffset: {
       width: 0,
@@ -1292,8 +1271,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 2,
-    width: '48%', // Approx half width for two columns on laptop, adjust as needed
-    minWidth: 300, // Minimum width to prevent cards from becoming too narrow
   },
   userHeader: {
     flexDirection: 'row',
@@ -1317,8 +1294,7 @@ const styles = StyleSheet.create({
   },
   userAvatarText: {
     fontSize: 16,
-    // fontFamily: 'Inter-Bold',
-    fontWeight: 'bold',
+    fontFamily: 'Inter-Bold',
     color: '#FFFFFF',
   },
   userDetails: {
@@ -1326,8 +1302,7 @@ const styles = StyleSheet.create({
   },
   userName: {
     fontSize: 16,
-    // fontFamily: 'Inter-SemiBold',
-    fontWeight: '600',
+    fontFamily: 'Inter-SemiBold',
     color: '#1E293B',
     marginBottom: 4,
   },
@@ -1340,8 +1315,7 @@ const styles = StyleSheet.create({
   },
   roleText: {
     fontSize: 12,
-    // fontFamily: 'Inter-Medium',
-    fontWeight: '500',
+    fontFamily: 'Inter-Medium',
   },
   userStatus: {
     alignItems: 'center',
@@ -1362,8 +1336,7 @@ const styles = StyleSheet.create({
   },
   contactText: {
     fontSize: 14,
-    // fontFamily: 'Inter-Regular',
-    fontWeight: 'normal',
+    fontFamily: 'Inter-Regular',
     color: '#64748B',
     flex: 1,
   },
@@ -1384,8 +1357,7 @@ const styles = StyleSheet.create({
   },
   actionButtonText: {
     fontSize: 12,
-    // fontFamily: 'Inter-SemiBold',
-    fontWeight: '600',
+    fontFamily: 'Inter-SemiBold',
   },
   emptyState: {
     alignItems: 'center',
@@ -1394,16 +1366,14 @@ const styles = StyleSheet.create({
   },
   emptyTitle: {
     fontSize: 18,
-    // fontFamily: 'Inter-SemiBold',
-    fontWeight: '600',
+    fontFamily: 'Inter-SemiBold',
     color: '#475569',
     marginTop: 16,
     marginBottom: 8,
   },
   emptySubtitle: {
     fontSize: 14,
-    // fontFamily: 'Inter-Regular',
-    fontWeight: 'normal',
+    fontFamily: 'Inter-Regular',
     color: '#64748B',
     textAlign: 'center',
     lineHeight: 20,
@@ -1413,7 +1383,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'center',
     alignItems: 'center',
-    // Removed padding as it's handled by maxWidth on modalContentWeb
+    padding: 20,
   },
   modalContent: {
     backgroundColor: '#FFFFFF',
@@ -1422,12 +1392,10 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: 400,
     maxHeight: '80%',
-    // For smaller screens (mobile), keep mobile-centric styles
   },
   modalTitle: {
     fontSize: 20,
-    // fontFamily: 'Inter-Bold',
-    fontWeight: 'bold',
+    fontFamily: 'Inter-Bold',
     color: '#1E293B',
     marginBottom: 20,
     textAlign: 'center',
@@ -1440,8 +1408,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     padding: 12,
     fontSize: 16,
-    // fontFamily: 'Inter-Regular',
-    fontWeight: 'normal',
+    fontFamily: 'Inter-Regular',
     color: '#1E293B',
     borderWidth: 1,
     borderColor: '#E2E8F0',
@@ -1452,24 +1419,33 @@ const styles = StyleSheet.create({
   },
   roleLabel: {
     fontSize: 16,
-    // fontFamily: 'Inter-Medium',
-    fontWeight: '500',
+    fontFamily: 'Inter-Medium',
     color: '#1E293B',
     marginBottom: 8,
   },
-  // Added for Picker styling consistency across platforms (especially web)
-  pickerContainer: {
+  roleOptions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  roleOption: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 6,
     backgroundColor: '#F8FAFC',
-    borderRadius: 8,
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    marginBottom: 16,
-    overflow: 'hidden', // Ensures picker content stays within bounds
   },
-  pickerStyle: {
-    height: 48,
-    width: '100%',
-    color: '#1E293B', // Ensure text color is visible
+  roleOptionSelected: {
+    backgroundColor: '#7C3AED',
+    borderColor: '#7C3AED',
+  },
+  roleOptionText: {
+    fontSize: 14,
+    fontFamily: 'Inter-Medium',
+    color: '#64748B',
+  },
+  roleOptionTextSelected: {
+    color: '#FFFFFF',
   },
   modalActions: {
     flexDirection: 'row',
@@ -1486,8 +1462,7 @@ const styles = StyleSheet.create({
   },
   cancelButtonText: {
     fontSize: 16,
-    // fontFamily: 'Inter-SemiBold',
-    fontWeight: '600',
+    fontFamily: 'Inter-SemiBold',
     color: '#64748B',
   },
   confirmButton: {
@@ -1499,359 +1474,324 @@ const styles = StyleSheet.create({
   },
   confirmButtonText: {
     fontSize: 16,
-    // fontFamily: 'Inter-SemiBold',
-    fontWeight: '600',
+    fontFamily: 'Inter-SemiBold',
     color: '#FFFFFF',
   },
-
-  // --- Laptop Web View Specific Styles for Modals ---
-  modalContentWeb: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 24,
-    // Dynamically set width based on screen size, minWidth for readability
-    width: '90%', // Start with a wider default
-    maxHeight: '90%', // More vertical space
-    overflow: 'hidden', // Hide overflow to allow ScrollView inside
+  userDetailsContainer: {
+    padding: 20,
   },
-  modalHeaderWeb: {
+  userDetailsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  userDetailsAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#7C3AED',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  userDetailsAvatarText: {
+    fontSize: 16,
+    fontFamily: 'Inter-Bold',
+    color: '#FFFFFF',
+  },
+  userDetailsInfo: {
+    flex: 1,
+  },
+  userDetailsName: {
+    fontSize: 16,
+    fontFamily: 'Inter-SemiBold',
+    color: '#1E293B',
+    marginBottom: 4,
+  },
+  userDetailsEmail: {
+    fontSize: 14,
+    fontFamily: 'Inter-Regular',
+    color: '#64748B',
+  },
+  userDetailsPhone: {
+    fontSize: 14,
+    fontFamily: 'Inter-Regular',
+    color: '#64748B',
+  },
+  workAnalyticsSection: {
+    marginBottom: 20,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontFamily: 'Inter-SemiBold',
+    color: '#1E293B',
+  },
+  analyticsButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    gap: 4,
+  },
+  analyticsButtonText: {
+    fontSize: 14,
+    fontFamily: 'Inter-Medium',
+    color: '#3B82F6',
+  },
+  performanceCard: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginBottom: 20,
+  },
+  performanceTitle: {
+    fontSize: 18,
+    fontFamily: 'Inter-SemiBold',
+    color: '#1E293B',
+    marginBottom: 12,
+  },
+  workStatsBackground: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  workStatsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  workStatsRowLast: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 0,
+  },
+  workStatCard: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  workStatIconContainer: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#F8FAFC',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  workStatContent: {
+    alignItems: 'center',
+  },
+  workStatNumber: {
+    fontSize: 18,
+    fontFamily: 'Inter-Bold',
+    color: '#1E293B',
+    marginBottom: 4,
+  },
+  workStatLabel: {
+    fontSize: 12,
+    fontFamily: 'Inter-Medium',
+    color: '#64748B',
+  },
+  closeButton: {
+    flex: 1,
+    paddingVertical: 12,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 8,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  closeButtonText: {
+    fontSize: 16,
+    fontFamily: 'Inter-SemiBold',
+    color: '#64748B',
+  },
+  modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 20,
   },
-  modalTitleWeb: {
-    fontSize: 24, // Slightly larger title for desktop
-    fontWeight: 'bold',
-    color: '#1E293B',
-    textAlign: 'left', // Align left for desktop
-  },
-  closeIconButtonWeb: {
+  closeIconButton: {
     padding: 8,
-    borderRadius: 20, // Make it circular for a nicer touch
-    backgroundColor: '#E2E8F0', // Light background for the close button
   },
-  userDetailsSectionWeb: {
-    flexDirection: 'row', // Arrange user details and analytics side-by-side
-    // Using space-between to push content to edges and gap for spacing
-    justifyContent: 'space-between',
-    gap: 24, // More space between sections
-    flex: 1, // Allow content to grow
-  },
-  userDetailsHeaderWeb: {
-    flexDirection: 'column', // Stack avatar and info vertically
-    alignItems: 'center',
-    marginBottom: 24, // More margin
+  analyticsContainer: {
     padding: 20,
-    borderRadius: 12,
-    backgroundColor: '#F0F4F8', // Slightly different background for visual separation
-    width: '35%', // Allocate width for user info column
-    minWidth: 200, // Minimum width for user details column
   },
-  userDetailsAvatarWeb: {
-    width: 80, // Larger avatar
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: '#7C3AED',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 16, // Space below avatar
-  },
-  userDetailsAvatarText: {
-    fontSize: 32, // Larger avatar text
-    fontWeight: 'bold',
-    color: '#FFFFFF',
-  },
-  userDetailsInfoWeb: {
-    alignItems: 'center', // Center align text within the info block
-    flex: 1,
-  },
-  userDetailsNameWeb: {
-    fontSize: 22, // Larger name
-    fontWeight: 'bold',
-    color: '#1E293B',
-    marginBottom: 8,
-    textAlign: 'center',
-  },
-  userDetailsEmailWeb: {
-    fontSize: 16,
-    fontWeight: 'normal',
-    color: '#64748B',
-    marginTop: 8,
-    textAlign: 'center',
-  },
-  userDetailsPhoneWeb: {
-    fontSize: 16,
-    fontWeight: 'normal',
-    color: '#64748B',
-    marginTop: 4,
-    textAlign: 'center',
-  },
-  workAnalyticsSectionWeb: {
-    flex: 1, // Allow analytics section to take remaining space
-    paddingHorizontal: 16,
-  },
-  sectionHeaderWeb: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16, // More spacing
-  },
-  sectionTitleWeb: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#1E293B',
-  },
-  analyticsButtonWeb: {
+  analyticsUserHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F0F4F8',
-    borderRadius: 8,
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    gap: 6,
-  },
-  analyticsButtonTextWeb: {
-    fontSize: 15,
-    fontWeight: '500',
-    color: '#3B82F6',
-  },
-  performanceCardWeb: {
-    backgroundColor: '#F8FAFC',
-    borderRadius: 12,
-    padding: 20, // More padding
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    marginBottom: 24, // More margin
-  },
-  performanceTitleWeb: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#1E293B',
-    marginBottom: 16, // More margin
-  },
-  workStatsBackgroundWeb: {
-    backgroundColor: '#FFFFFF', // Lighter background for stats cards
-    borderRadius: 10,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  workStatsRowWeb: {
-    flexDirection: 'row',
-    justifyContent: 'space-around', // Distribute items evenly
-    marginBottom: 16, // Space between rows
-  },
-  workStatCardWeb: {
-    alignItems: 'center',
-    flex: 1,
-    padding: 8, // Add some padding inside the stat card
-  },
-  workStatNumberWeb: {
-    fontSize: 20, // Larger numbers
-    fontWeight: 'bold',
-    color: '#1E293B',
-    marginBottom: 6,
-  },
-  workStatLabelWeb: {
-    fontSize: 13, // Slightly larger label
-    fontWeight: '500',
-    color: '#64748B',
-    textAlign: 'center',
-  },
-  closeButtonWeb: {
-    // Positioning at the bottom of the content, more space
-    marginTop: 24,
-    paddingVertical: 14,
-    backgroundColor: '#F8FAFC',
-    borderRadius: 10,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  closeButtonTextWeb: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#64748B',
-  },
-
-  // Analytics Modal specific styles (similar to User Details Modal)
-  analyticsContainerWeb: {
-    paddingTop: 10, // Adjust padding
-  },
-  analyticsUserHeaderWeb: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 24,
-    backgroundColor: '#F0F4F8', // Consistent light background
-    padding: 16,
-    borderRadius: 12,
-  },
-  analyticsUserAvatarWeb: {
-    width: 60, // Slightly smaller than main details, but larger than mobile
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: '#7C3AED',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 16,
-  },
-  analyticsUserAvatarText: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
-  },
-  analyticsUserInfoWeb: {
-    flex: 1,
-  },
-  analyticsUserNameWeb: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#1E293B',
-    marginBottom: 4,
-  },
-  analyticsUserEmailWeb: {
-    fontSize: 15,
-    fontWeight: 'normal',
-    color: '#64748B',
-  },
-  periodTabsWeb: {
-    flexDirection: 'column', // Stack period tabs vertically for clarity on desktop
-    gap: 16, // Space between each period tab
-    marginBottom: 24,
-  },
-  periodTabWeb: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    marginHorizontal: 0, // Remove horizontal margin from mobile version
-  },
-  periodTabTitleWeb: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#1E293B',
-    textAlign: 'left', // Align title left
     marginBottom: 12,
   },
-  periodStatsGridWeb: {
-    flexDirection: 'row',
-    justifyContent: 'space-around', // Distribute stats evenly
-    gap: 16, // Space between stat cards
-  },
-  periodStatCardWeb: {
+  analyticsUserAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#7C3AED',
+    justifyContent: 'center',
     alignItems: 'center',
-    flex: 1, // Distribute space
-    padding: 8,
+    marginRight: 12,
   },
-  periodStatNumberWeb: {
-    fontSize: 20,
-    fontWeight: 'bold',
+  analyticsUserAvatarText: {
+    fontSize: 16,
+    fontFamily: 'Inter-Bold',
+    color: '#FFFFFF',
+  },
+  analyticsUserInfo: {
+    flex: 1,
+  },
+  analyticsUserName: {
+    fontSize: 16,
+    fontFamily: 'Inter-SemiBold',
     color: '#1E293B',
     marginBottom: 4,
   },
-  periodStatLabelWeb: {
-    fontSize: 13,
-    fontWeight: '500',
+  analyticsUserEmail: {
+    fontSize: 14,
+    fontFamily: 'Inter-Regular',
     color: '#64748B',
-    textAlign: 'center',
   },
-  overallStatsSectionWeb: {
-    marginBottom: 24,
-  },
-  overallStatsTitleWeb: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#1E293B',
-    marginBottom: 16,
-  },
-  overallStatsGridWeb: {
+  periodTabs: {
     flexDirection: 'row',
     justifyContent: 'space-around',
-    gap: 16,
+    marginBottom: 20,
   },
-  overallStatCardWeb: {
-    alignItems: 'center',
+  periodTab: {
     flex: 1,
-    padding: 12,
-    backgroundColor: '#F8FAFC', // Consistent background
-    borderRadius: 12,
+    paddingVertical: 12,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 8,
+    marginHorizontal: 4,
     borderWidth: 1,
     borderColor: '#E2E8F0',
   },
-  overallStatNumberWeb: {
-    fontSize: 20,
-    fontWeight: 'bold',
+  periodTabTitle: {
+    fontSize: 16,
+    fontFamily: 'Inter-SemiBold',
+    color: '#1E293B',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  periodStatsGrid: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  periodStatCard: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  periodStatNumber: {
+    fontSize: 18,
+    fontFamily: 'Inter-Bold',
     color: '#1E293B',
     marginBottom: 4,
   },
-  overallStatLabelWeb: {
-    fontSize: 13,
-    fontWeight: '500',
+  periodStatLabel: {
+    fontSize: 12,
+    fontFamily: 'Inter-Medium',
     color: '#64748B',
     textAlign: 'center',
   },
-  insightsSectionWeb: {
-    marginTop: 24,
+  overallStatsSection: {
+    marginBottom: 20,
   },
-  insightsTitleWeb: {
-    fontSize: 20,
-    fontWeight: '600',
+  overallStatsTitle: {
+    fontSize: 18,
+    fontFamily: 'Inter-SemiBold',
     color: '#1E293B',
-    marginBottom: 16,
+    marginBottom: 8,
   },
-  insightsContentWeb: {
-    padding: 20,
+  overallStatsGrid: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  overallStatCard: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  overallStatNumber: {
+    fontSize: 18,
+    fontFamily: 'Inter-Bold',
+    color: '#1E293B',
+    marginBottom: 4,
+  },
+  overallStatLabel: {
+    fontSize: 12,
+    fontFamily: 'Inter-Medium',
+    color: '#64748B',
+  },
+  insightsSection: {
+    marginTop: 20,
+  },
+  insightsTitle: {
+    fontSize: 18,
+    fontFamily: 'Inter-SemiBold',
+    color: '#1E293B',
+    marginBottom: 12,
+  },
+  insightsContent: {
+    padding: 16,
     backgroundColor: '#F8FAFC',
     borderRadius: 12,
     borderWidth: 1,
     borderColor: '#E2E8F0',
   },
-  insightTextWeb: {
-    fontSize: 15,
-    fontWeight: 'normal',
+  insightText: {
+    fontSize: 14,
+    fontFamily: 'Inter-Regular',
     color: '#64748B',
-    marginBottom: 10,
+    marginBottom: 8,
   },
-  summarySectionWeb: {
-    marginTop: 24,
+  summarySection: {
+    marginTop: 20,
   },
-  summaryTitleWeb: {
-    fontSize: 20,
-    fontWeight: '600',
+  summaryTitle: {
+    fontSize: 18,
+    fontFamily: 'Inter-SemiBold',
     color: '#1E293B',
-    marginBottom: 16,
+    marginBottom: 12,
   },
-  summaryGridWeb: {
+  summaryGrid: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
-    gap: 16,
+    justifyContent: 'space-between',
+    gap: 12,
   },
-  summaryCardWeb: {
+  summaryCard: {
     alignItems: 'center',
     flex: 1,
     backgroundColor: '#F8FAFC',
     borderRadius: 12,
-    padding: 20,
+    padding: 16,
     borderWidth: 1,
     borderColor: '#E2E8F0',
   },
-  summaryLabelWeb: {
-    fontSize: 15,
-    fontWeight: '500',
+  summaryLabel: {
+    fontSize: 14,
+    fontFamily: 'Inter-Medium',
     color: '#64748B',
-    marginBottom: 6,
+    marginBottom: 4,
   },
-  summaryNumberWeb: {
-    fontSize: 20,
-    fontWeight: 'bold',
+  summaryNumber: {
+    fontSize: 18,
+    fontFamily: 'Inter-Bold',
     color: '#1E293B',
-    marginBottom: 6,
+    marginBottom: 4,
   },
-  summarySubtextWeb: {
-    fontSize: 13,
-    fontWeight: 'normal',
+  summarySubtext: {
+    fontSize: 12,
+    fontFamily: 'Inter-Regular',
     color: '#64748B',
   },
 });
