@@ -18,6 +18,13 @@ interface Theme {
   textTertiary: string;
   shadow: string;
   borderSecondary: string;
+  // --- Enhanced properties for UI consistency ---
+  cardBackground: string;
+  headerButtonBackground: string;
+  inputBorder: string;
+  disabled: string;
+  placeholderText: string;
+  gradient: string[];
 }
 
 interface ThemeContextType {
@@ -45,6 +52,13 @@ const lightTheme: Theme = {
   textTertiary: '#A0AEC0',
   shadow: 'rgba(0,0,0,0.15)',
   borderSecondary: '#CBD5E1',
+  // --- Enhanced properties for UI consistency ---
+  cardBackground: '#FFFFFF',
+  headerButtonBackground: 'rgba(255, 255, 255, 0.2)',
+  inputBorder: '#CBD5E1',
+  disabled: '#E2E8F0',
+  placeholderText: '#94A3B8',
+  gradient: ['#C02626', '#E24C4C', '#F76B6B'],
 };
 
 const darkTheme: Theme = {
@@ -64,6 +78,13 @@ const darkTheme: Theme = {
   textTertiary: '#6B7280',
   shadow: 'rgba(0,0,0,0.7)',
   borderSecondary: '#334155',
+  // --- Enhanced properties for UI consistency ---
+  cardBackground: '#1F2937',
+  headerButtonBackground: 'rgba(0, 0, 0, 0.2)',
+  inputBorder: '#4B5563',
+  disabled: '#4B5563',
+  placeholderText: '#6B7280',
+  gradient: ['#8C0000', '#A31F1F', '#B83232'],
 };
 
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -109,4 +130,4 @@ export const useTheme = () => {
     throw new Error('useTheme must be used within a ThemeProvider');
   }
   return context;
-}; 
+};

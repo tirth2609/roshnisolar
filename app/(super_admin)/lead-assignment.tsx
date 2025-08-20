@@ -11,52 +11,62 @@ import {
   ActivityIndicator,
   Dimensions,
   TextInput,
+  Platform,
+  ViewStyle,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { 
-  Users, 
-  Phone, 
-  ArrowRight, 
-  UserPlus, 
-  UserCheck,
-  Filter,
-  Search,
-  Calendar,
-  MapPin,
-  Mail,
+import {
+  Users,
+  Phone,
+  ArrowRight,
+  UserPlus,
   X,
   CheckCircle,
   Clock,
   AlertTriangle,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  Search,
+  Calendar,
+  MapPin,
+  Mail,
+  List,
+  Grid,
 } from 'lucide-react-native';
 import { useData } from '@/contexts/DataContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { Lead } from '@/types/leads';
 import SkeletonLeadList from '../components/SkeletonLeadList';
+import { FadeInView, SlideInView, AnimatedCard } from '@/components/AnimatedComponents';
 
 const { width } = Dimensions.get('window');
 
 const BULK_OPTIONS = [5, 10, 15, 20, 25, 50, 100];
 
+// Utility function to determine screen size categories
+const getScreenSize = (width: number) => {
+  if (width > 1200) return 'xl';
+  if (width > 900) return 'lg';
+  if (width > 600) return 'md';
+  return 'sm';
+};
+
 export default function LeadAssignmentScreen() {
   const { user } = useAuth();
-  const { 
-    leads, 
-    getAllUsers, 
+  const {
+    leads,
+    getAllUsers,
     bulkAssignLeadsToCallOperator,
     bulkAssignLeadsToTechnician,
     getUnassignedLeads,
     getUnassignedToCallOperators,
     getUnassignedToTechnicians,
-    isLoading, 
-    refreshData 
+    isLoading,
+    refreshData
   } = useData();
   const { theme } = useTheme();
-  
-  // Move all hooks to the top before any return
+
   const [selectedOperator, setSelectedOperator] = useState<any>(null);
   const [selectedBulkSize, setSelectedBulkSize] = useState<number>(10);
   const [showBulkAssignmentModal, setShowBulkAssignmentModal] = useState(false);
@@ -66,27 +76,26 @@ export default function LeadAssignmentScreen() {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
   const [currentOperatorPage, setCurrentOperatorPage] = useState<{ [key: string]: number }>({});
+  const [viewMode, setViewMode] = useState<'list' | 'grid'>('grid'); // Default to 'grid'
   const OPERATOR_PAGE_SIZE = 10;
+  const screenSize = getScreenSize(width);
 
-  // All data fetching here
   const users = getAllUsers();
   const unassignedLeads = getUnassignedLeads();
   const unassignedToCallOps = getUnassignedToCallOperators();
   const unassignedToTechs = getUnassignedToTechnicians();
 
-  // Only allow admins and team leads to access this screen
   if (!user || (user.role !== 'super_admin' && user.role !== 'team_lead')) {
     return (
-      <View style={styles.container}>
-        <Text style={styles.errorText}>Access denied. Only administrators can assign leads.</Text>
+      <View style={[styles.container, { backgroundColor: theme.background }]}>
+        <Text style={[styles.errorText, { color: theme.error }]}>Access denied. Only administrators can assign leads.</Text>
       </View>
     );
   }
-  
+
   const getFilteredLeads = () => {
     let filteredLeads = leads;
 
-    // Apply filter
     switch (filterType) {
       case 'unassigned':
         filteredLeads = unassignedLeads;
@@ -98,7 +107,7 @@ export default function LeadAssignmentScreen() {
         filteredLeads = unassignedToTechs;
         break;
       case 'assigned':
-        filteredLeads = leads.filter(lead => 
+        filteredLeads = leads.filter(lead =>
           lead.call_operator_id || lead.technician_id
         );
         break;
@@ -109,7 +118,6 @@ export default function LeadAssignmentScreen() {
         filteredLeads = leads;
     }
 
-    // Apply search
     if (searchQuery.trim()) {
       filteredLeads = filteredLeads.filter(lead =>
         lead.customer_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -143,7 +151,7 @@ export default function LeadAssignmentScreen() {
     }
 
     const availableLeads = unassignedLeads.slice(0, selectedBulkSize);
-    
+
     if (availableLeads.length === 0) {
       Alert.alert('Error', 'No unassigned leads available');
       return;
@@ -151,13 +159,13 @@ export default function LeadAssignmentScreen() {
 
     try {
       const leadIds = availableLeads.map(lead => lead.id);
-      
+
       if (selectedOperator.role === 'call_operator') {
         await bulkAssignLeadsToCallOperator(leadIds, selectedOperator.id);
       } else if (selectedOperator.role === 'technician') {
         await bulkAssignLeadsToTechnician(leadIds, selectedOperator.id);
       }
-      
+
       setShowBulkAssignmentModal(false);
       setSelectedOperator(null);
       Alert.alert('Success', `${availableLeads.length} leads assigned to ${selectedOperator.name}!`);
@@ -180,13 +188,13 @@ export default function LeadAssignmentScreen() {
 
   const getStatusIcon = (status: string) => {
     switch (status) {
-      case 'new': return <Clock size={16} color="#3B82F6" />;
-      case 'contacted': return <Phone size={16} color="#F59E0B" />;
-      case 'transit': return <ArrowRight size={16} color="#8B5CF6" />;
-      case 'completed': return <CheckCircle size={16} color="#10B981" />;
-      case 'declined': return <X size={16} color="#EF4444" />;
-      case 'hold': return <AlertTriangle size={16} color="#6B7280" />;
-      default: return <Clock size={16} color="#6B7280" />;
+      case 'new': return <Clock size={16} color={getStatusColor(status)} />;
+      case 'contacted': return <Phone size={16} color={getStatusColor(status)} />;
+      case 'transit': return <ArrowRight size={16} color={getStatusColor(status)} />;
+      case 'completed': return <CheckCircle size={16} color={getStatusColor(status)} />;
+      case 'declined': return <X size={16} color={getStatusColor(status)} />;
+      case 'hold': return <AlertTriangle size={16} color={getStatusColor(status)} />;
+      default: return <Clock size={16} color={getStatusColor(status)} />;
     }
   };
 
@@ -198,7 +206,7 @@ export default function LeadAssignmentScreen() {
     const paginatedLeads = assignedLeads.slice((page - 1) * OPERATOR_PAGE_SIZE, page * OPERATOR_PAGE_SIZE);
 
     return (
-      <View style={styles.operatorCard}>
+      <View style={[styles.operatorCard, { backgroundColor: theme.cardBackground }]}>
         <TouchableOpacity
           style={styles.operatorHeader}
           onPress={() => {
@@ -209,28 +217,28 @@ export default function LeadAssignmentScreen() {
           }}
         >
           <View style={styles.operatorInfo}>
-            <Text style={styles.operatorName}>{operator.name}</Text>
-            <Text style={styles.operatorRole}>{operator.role.replace('_', ' ').toUpperCase()}</Text>
-            <Text style={styles.operatorEmail}>{operator.email}</Text>
+            <Text style={[styles.operatorName, { color: theme.text }]}>{operator.name}</Text>
+            <Text style={[styles.operatorRole, { color: theme.primary }]}>{operator.role.replace('_', ' ').toUpperCase()}</Text>
+            <Text style={[styles.operatorEmail, { color: theme.textSecondary }]}>{operator.email}</Text>
           </View>
           <View style={styles.operatorStats}>
-            <Text style={styles.operatorLeadCount}>{assignedLeads.length}</Text>
-            <Text style={styles.operatorLeadLabel}>Leads</Text>
-            {isExpanded ? <ChevronUp size={20} color="#6B7280" /> : <ChevronDown size={20} color="#6B7280" />}
+            <Text style={[styles.operatorLeadCount, { color: theme.text }]}>{assignedLeads.length}</Text>
+            <Text style={[styles.operatorLeadLabel, { color: theme.textSecondary }]}>Leads</Text>
+            {isExpanded ? <ChevronUp size={20} color={theme.textSecondary} /> : <ChevronDown size={20} color={theme.textSecondary} />}
           </View>
         </TouchableOpacity>
 
         {isExpanded && (
           <View style={styles.operatorLeads}>
             {assignedLeads.length === 0 ? (
-              <Text style={styles.noLeadsText}>No leads assigned</Text>
+              <Text style={[styles.noLeadsText, { color: theme.textTertiary }]}>No leads assigned</Text>
             ) : (
               <>
                 {paginatedLeads.map((lead) => (
-                  <View key={lead.id} style={styles.assignedLeadItem}>
+                  <View key={lead.id} style={[styles.assignedLeadItem, { backgroundColor: theme.background }]}>
                     <View style={styles.assignedLeadInfo}>
-                      <Text style={styles.leadName}>{lead.customer_name}</Text>
-                      <Text style={styles.leadPhone}>{lead.phone_number}</Text>
+                      <Text style={[styles.leadName, { color: theme.text }]}>{lead.customer_name}</Text>
+                      <Text style={[styles.leadPhone, { color: theme.textSecondary }]}>{lead.phone_number}</Text>
                       <View style={styles.statusContainer}>
                         {getStatusIcon(lead.status)}
                         <Text style={[styles.statusText, { color: getStatusColor(lead.status) }]}>
@@ -240,21 +248,22 @@ export default function LeadAssignmentScreen() {
                     </View>
                   </View>
                 ))}
-                {/* Pagination Controls for Operator Leads */}
                 {totalPages > 1 && (
-                  <View style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginVertical: 8, gap: 8 }}>
+                  <View style={[styles.paginationContainer, { marginVertical: 8 }]}>
                     <TouchableOpacity
                       onPress={() => setCurrentOperatorPage(prev => ({ ...prev, [operator.id]: page - 1 }))}
                       disabled={page === 1}
+                      style={[styles.paginationButton, { backgroundColor: page === 1 ? theme.disabled : theme.primary }]}
                     >
-                      <Text>Previous</Text>
+                      <Text style={styles.paginationButtonText}>Previous</Text>
                     </TouchableOpacity>
-                    <Text>Page {page} of {totalPages}</Text>
+                    <Text style={[styles.paginationText, { color: theme.text }]}>Page {page} of {totalPages}</Text>
                     <TouchableOpacity
                       onPress={() => setCurrentOperatorPage(prev => ({ ...prev, [operator.id]: page + 1 }))}
                       disabled={page === totalPages}
+                      style={[styles.paginationButton, { backgroundColor: page === totalPages ? theme.disabled : theme.primary }]}
                     >
-                      <Text>Next</Text>
+                      <Text style={styles.paginationButtonText}>Next</Text>
                     </TouchableOpacity>
                   </View>
                 )}
@@ -264,24 +273,24 @@ export default function LeadAssignmentScreen() {
         )}
 
         <TouchableOpacity
-          style={styles.assignButton}
+          style={[styles.assignButton, { backgroundColor: theme.primary }]}
           onPress={() => {
             setSelectedOperator(operator);
             setShowBulkAssignmentModal(true);
           }}
         >
-          <UserPlus size={16} color="#FFFFFF" />
-          <Text style={styles.assignButtonText}>Assign Leads</Text>
+          <UserPlus size={16} color={theme.textInverse} />
+          <Text style={[styles.assignButtonText, { color: theme.textInverse }]}>Assign Leads</Text>
         </TouchableOpacity>
       </View>
     );
   };
 
   const LeadCard = ({ lead }: { lead: Lead }) => (
-    <View style={styles.leadCard}>
+    <View style={[styles.leadCard, { backgroundColor: theme.cardBackground }]}>
       <View style={styles.leadHeader}>
         <View style={styles.leadInfo}>
-          <Text style={styles.customerName}>{lead.customer_name}</Text>
+          <Text style={[styles.customerName, { color: theme.text }]}>{lead.customer_name}</Text>
           <View style={styles.statusContainer}>
             {getStatusIcon(lead.status)}
             <Text style={[styles.statusText, { color: getStatusColor(lead.status) }]}>
@@ -293,39 +302,38 @@ export default function LeadAssignmentScreen() {
 
       <View style={styles.leadDetails}>
         <View style={styles.detailRow}>
-          <Phone size={14} color="#6B7280" />
-          <Text style={styles.detailText}>{lead.phone_number}</Text>
+          <Phone size={14} color={theme.textSecondary} />
+          <Text style={[styles.detailText, { color: theme.textSecondary }]}>{lead.phone_number}</Text>
         </View>
-        
+
         <View style={styles.detailRow}>
-          <MapPin size={14} color="#6B7280" />
-          <Text style={styles.detailText} numberOfLines={2}>{lead.address}</Text>
+          <MapPin size={14} color={theme.textSecondary} />
+          <Text style={[styles.detailText, { color: theme.textSecondary }]} numberOfLines={2}>{lead.address}</Text>
         </View>
 
         {lead.email && (
           <View style={styles.detailRow}>
-            <Mail size={14} color="#6B7280" />
-            <Text style={styles.detailText}>{lead.email}</Text>
+            <Mail size={14} color={theme.textSecondary} />
+            <Text style={[styles.detailText, { color: theme.textSecondary }]}>{lead.email}</Text>
           </View>
         )}
 
         <View style={styles.detailRow}>
-          <Calendar size={14} color="#6B7280" />
-          <Text style={styles.detailText}>
+          <Calendar size={14} color={theme.textSecondary} />
+          <Text style={[styles.detailText, { color: theme.textSecondary }]}>
             {new Date(lead.created_at).toLocaleDateString()}
           </Text>
         </View>
       </View>
 
-      {/* Assignment Info */}
       {(lead.call_operator_name || lead.technician_name) && (
-        <View style={styles.assignmentInfo}>
-          <Text style={styles.assignmentLabel}>Currently Assigned:</Text>
+        <View style={[styles.assignmentInfo, { backgroundColor: theme.backgroundSecondary, borderColor: theme.info }]}>
+          <Text style={[styles.assignmentLabel, { color: theme.textSecondary }]}>Currently Assigned:</Text>
           {lead.call_operator_name && (
-            <Text style={styles.assignmentText}>📞 {lead.call_operator_name}</Text>
+            <Text style={[styles.assignmentText, { color: theme.text }]}>📞 {lead.call_operator_name}</Text>
           )}
           {lead.technician_name && (
-            <Text style={styles.assignmentText}>🔧 {lead.technician_name}</Text>
+            <Text style={[styles.assignmentText, { color: theme.text }]}>🔧 {lead.technician_name}</Text>
           )}
         </View>
       )}
@@ -341,177 +349,203 @@ export default function LeadAssignmentScreen() {
   const paginatedLeads = filteredLeads.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   useEffect(() => {
-    setCurrentPage(1); // Reset to first page if filters/search change
+    setCurrentPage(1);
   }, [filterType, searchQuery, pageSize]);
 
   const callOperators = getUsersByRole('call_operator');
   const technicians = getUsersByRole('technician');
 
+  const operatorGridStyle: ViewStyle = {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    gap: 16,
+  };
+
+  const operatorCardWidth = () => {
+    if (viewMode === 'list') {
+      return '100%';
+    }
+    if (screenSize === 'xl') {
+      return '31%';
+    }
+    if (screenSize === 'lg') {
+      return '48%';
+    }
+    return '100%';
+  };
+
   return (
-    <View style={styles.container}>
-      <LinearGradient colors={['#DC2626', '#EF4444']} style={styles.header}>
+    <View style={[styles.container, { backgroundColor: theme.background }]}>
+      <LinearGradient colors={theme.gradient as string[]} style={styles.header}>
         <View style={styles.headerContent}>
           <View>
-            <Text style={styles.headerTitle}>Lead Assignment</Text>
-            <Text style={styles.headerSubtitle}>Operator to Leads Management</Text>
+            <Text style={[styles.headerTitle, { color: theme.textInverse }]}>Lead Assignment</Text>
+            <Text style={[styles.headerSubtitle, { color: theme.textInverse }]}>Operator to Leads Management</Text>
           </View>
         </View>
       </LinearGradient>
 
       <ScrollView
-        style={styles.content}
+        style={styles.contentScroll}
         showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={isLoading} onRefresh={refreshData} />}
+        refreshControl={
+          <RefreshControl refreshing={isLoading} onRefresh={refreshData} tintColor={theme.primary} colors={[theme.primary]} />
+        }
       >
-        {/* Stats Cards */}
-        <View style={styles.section}>
-          <View style={styles.statsGrid}>
-            <View style={styles.statCard}>
-              <Text style={styles.statNumber}>{unassignedLeads.length}</Text>
-              <Text style={styles.statLabel}>Unassigned</Text>
-            </View>
-            <View style={styles.statCard}>
-              <Text style={styles.statNumber}>
-                {leads.filter(l => l.call_operator_id || l.technician_id).length}
-              </Text>
-              <Text style={styles.statLabel}>Assigned</Text>
-            </View>
-            <View style={styles.statCard}>
-              <Text style={styles.statNumber}>{callOperators.length + technicians.length}</Text>
-              <Text style={styles.statLabel}>Operators</Text>
-            </View>
-          </View>
-        </View>
-
-        {/* Filters */}
-        <View style={styles.section}>
-          <View style={styles.filterContainer}>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
-              <View style={{ flexDirection: 'row', gap: 8 }}>
-                <TouchableOpacity
-                  style={[styles.filterButton, filterType === 'all' && styles.filterButtonActive]}
-                  onPress={() => setFilterType('all')}
-                >
-                  <Text style={[styles.filterButtonText, filterType === 'all' && styles.filterButtonTextActive]}>
-                    All ({leads.length})
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.filterButton, filterType === 'unassigned' && styles.filterButtonActive]}
-                  onPress={() => setFilterType('unassigned')}
-                >
-                  <Text style={[styles.filterButtonText, filterType === 'unassigned' && styles.filterButtonTextActive]}>
-                    Unassigned ({unassignedLeads.length})
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.filterButton, filterType === 'unassigned_call_ops' && styles.filterButtonActive]}
-                  onPress={() => setFilterType('unassigned_call_ops')}
-                >
-                  <Text style={[styles.filterButtonText, filterType === 'unassigned_call_ops' && styles.filterButtonTextActive]}>
-                    Unassigned Call Operators ({unassignedToCallOps.length})
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.filterButton, filterType === 'unassigned_techs' && styles.filterButtonActive]}
-                  onPress={() => setFilterType('unassigned_techs')}
-                >
-                  <Text style={[styles.filterButtonText, filterType === 'unassigned_techs' && styles.filterButtonTextActive]}>
-                    Unassigned Technicians ({unassignedToTechs.length})
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.filterButton, filterType === 'assigned' && styles.filterButtonActive]}
-                  onPress={() => setFilterType('assigned')}
-                >
-                  <Text style={[styles.filterButtonText, filterType === 'assigned' && styles.filterButtonTextActive]}>
-                    Assigned ({leads.filter(l => l.call_operator_id || l.technician_id).length})
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.filterButton, filterType === 'declined' && styles.filterButtonActive]}
-                  onPress={() => setFilterType('declined')}
-                >
-                  <Text style={[styles.filterButtonText, filterType === 'declined' && styles.filterButtonTextActive]}>
-                    Declined ({leads.filter(l => l.status === 'declined').length})
-                  </Text>
-                </TouchableOpacity>
+        <View style={styles.contentContainer}>
+          <View style={styles.spacer} />
+          {/* Stats Cards */}
+          <FadeInView duration={600}>
+            <View style={styles.statsGrid}>
+              <View style={[styles.statCard, { backgroundColor: theme.cardBackground }]}>
+                <Text style={[styles.statNumber, { color: theme.primary }]}>{unassignedLeads.length}</Text>
+                <Text style={[styles.statLabel, { color: theme.textSecondary }]}>Unassigned</Text>
               </View>
+              <View style={[styles.statCard, { backgroundColor: theme.cardBackground }]}>
+                <Text style={[styles.statNumber, { color: theme.info }]}>
+                  {leads.filter(l => l.call_operator_id || l.technician_id).length}
+                </Text>
+                <Text style={[styles.statLabel, { color: theme.textSecondary }]}>Assigned</Text>
+              </View>
+              <View style={[styles.statCard, { backgroundColor: theme.cardBackground }]}>
+                <Text style={[styles.statNumber, { color: theme.success }]}>{callOperators.length + technicians.length}</Text>
+                <Text style={[styles.statLabel, { color: theme.textSecondary }]}>Active Operators</Text>
+              </View>
+            </View>
+          </FadeInView>
+          <View style={styles.spacer} />
+          {/* Operators Section */}
+          <SlideInView direction="up" delay={200} duration={600}>
+            <View style={styles.sectionHeaderRow}>
+              <Text style={[styles.sectionTitle, { color: theme.text }]}>Operators ({callOperators.length + technicians.length})</Text>
+              <TouchableOpacity onPress={() => setViewMode(viewMode === 'list' ? 'grid' : 'list')}>
+                {viewMode === 'list' ? <Grid size={24} color={theme.textSecondary} /> : <List size={24} color={theme.textSecondary} />}
+              </TouchableOpacity>
+            </View>
+            {callOperators.length + technicians.length === 0 ? (
+              <View style={styles.emptyState}>
+                <Users size={48} color={theme.textTertiary} />
+                <Text style={[styles.emptyStateText, { color: theme.textSecondary }]}>No operators found</Text>
+              </View>
+            ) : (
+              <View style={viewMode === 'grid' ? operatorGridStyle : {}}>
+                {callOperators.map((operator) => (
+                  <View key={operator.id} style={{ width: operatorCardWidth() }}>
+                    <OperatorCard operator={operator} />
+                  </View>
+                ))}
+                {technicians.map((operator) => (
+                  <View key={operator.id} style={{ width: operatorCardWidth() }}>
+                    <OperatorCard operator={operator} />
+                  </View>
+                ))}
+              </View>
+            )}
+          </SlideInView>
+          <View style={styles.spacer} />
+          {/* Leads List */}
+          <SlideInView direction="up" delay={600} duration={600}>
+            <View style={styles.sectionHeaderRow}>
+              <Text style={[styles.sectionTitle, { color: theme.text }]}>Leads ({filteredLeads.length})</Text>
+            </View>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterContainer}>
+              <TouchableOpacity
+                style={[styles.filterButton, filterType === 'all' && { backgroundColor: theme.primary, borderColor: theme.primary }]}
+                onPress={() => setFilterType('all')}
+              >
+                <Text style={[styles.filterButtonText, filterType === 'all' && { color: theme.textInverse }]}>All ({leads.length})</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.filterButton, filterType === 'unassigned' && { backgroundColor: theme.primary, borderColor: theme.primary }]}
+                onPress={() => setFilterType('unassigned')}
+              >
+                <Text style={[styles.filterButtonText, filterType === 'unassigned' && { color: theme.textInverse }]}>Unassigned ({unassignedLeads.length})</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.filterButton, filterType === 'unassigned_call_ops' && { backgroundColor: theme.primary, borderColor: theme.primary }]}
+                onPress={() => setFilterType('unassigned_call_ops')}
+              >
+                <Text style={[styles.filterButtonText, filterType === 'unassigned_call_ops' && { color: theme.textInverse }]}>Unassigned Ops ({unassignedToCallOps.length})</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.filterButton, filterType === 'unassigned_techs' && { backgroundColor: theme.primary, borderColor: theme.primary }]}
+                onPress={() => setFilterType('unassigned_techs')}
+              >
+                <Text style={[styles.filterButtonText, filterType === 'unassigned_techs' && { color: theme.textInverse }]}>Unassigned Techs ({unassignedToTechs.length})</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.filterButton, filterType === 'assigned' && { backgroundColor: theme.primary, borderColor: theme.primary }]}
+                onPress={() => setFilterType('assigned')}
+              >
+                <Text style={[styles.filterButtonText, filterType === 'assigned' && { color: theme.textInverse }]}>Assigned ({leads.filter(l => l.call_operator_id || l.technician_id).length})</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.filterButton, filterType === 'declined' && { backgroundColor: theme.primary, borderColor: theme.primary }]}
+                onPress={() => setFilterType('declined')}
+              >
+                <Text style={[styles.filterButtonText, filterType === 'declined' && { color: theme.textInverse }]}>Declined ({leads.filter(l => l.status === 'declined').length})</Text>
+              </TouchableOpacity>
             </ScrollView>
-          </View>
-        </View>
-
-        {/* Operators Section */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Call Operators ({callOperators.length})</Text>
-          {callOperators.length === 0 ? (
-            <View style={styles.emptyState}>
-              <Users size={48} color="#9CA3AF" />
-              <Text style={styles.emptyStateText}>No call operators found</Text>
+            <View style={[styles.searchContainer, { backgroundColor: theme.cardBackground, borderColor: theme.border }]}>
+              <Search size={20} color={theme.textSecondary} style={styles.searchIcon} />
+              <TextInput
+                style={[styles.searchInput, { color: theme.text }]}
+                placeholder="Search by name or phone..."
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                placeholderTextColor={theme.textSecondary}
+              />
             </View>
-          ) : (
-            callOperators.map((operator) => (
-              <OperatorCard key={operator.id} operator={operator} />
-            ))
-          )}
-        </View>
-
-        {/* Technicians Section */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Technicians ({technicians.length})</Text>
-          {technicians.length === 0 ? (
-            <View style={styles.emptyState}>
-              <Users size={48} color="#9CA3AF" />
-              <Text style={styles.emptyStateText}>No technicians found</Text>
+            <View style={styles.leadListContainer}>
+              {paginatedLeads.length === 0 ? (
+                <View style={styles.emptyState}>
+                  <Users size={48} color={theme.textTertiary} />
+                  <Text style={[styles.emptyStateText, { color: theme.textSecondary }]}>No leads found</Text>
+                  <Text style={[styles.emptyStateSubtext, { color: theme.textTertiary }]}>
+                    {filterType === 'unassigned' ? 'All leads have been assigned' : 'No leads match your criteria'}
+                  </Text>
+                </View>
+              ) : (
+                paginatedLeads.map((lead) => (
+                  <LeadCard key={lead.id} lead={lead} />
+                ))
+              )}
             </View>
-          ) : (
-            technicians.map((operator) => (
-              <OperatorCard key={operator.id} operator={operator} />
-            ))
-          )}
-        </View>
-
-        {/* Leads List */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Leads ({filteredLeads.length})</Text>
-          {filteredLeads.length === 0 ? (
-            <View style={styles.emptyState}>
-              <Users size={48} color="#9CA3AF" />
-              <Text style={styles.emptyStateText}>No leads found</Text>
-              <Text style={styles.emptyStateSubtext}>
-                {filterType === 'unassigned' ? 'All leads have been assigned' : 'No leads match your criteria'}
-              </Text>
-            </View>
-          ) : (
-            paginatedLeads.map((lead) => (
-              <LeadCard key={lead.id} lead={lead} />
-            ))
-          )}
-        </View>
-
-        {/* Pagination Controls */}
-        <View style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginVertical: 16, gap: 12 }}>
-          <TouchableOpacity
-            onPress={() => setCurrentPage(currentPage - 1)}
-            disabled={currentPage === 1}
-          >
-            <Text>Previous</Text>
-          </TouchableOpacity>
-          <Text>Page {currentPage} of {totalPages}</Text>
-          <TouchableOpacity
-            onPress={() => setCurrentPage(currentPage + 1)}
-            disabled={currentPage === totalPages}
-          >
-            <Text>Next</Text>
-          </TouchableOpacity>
-          <Text>Page Size:</Text>
-          <TextInput
-            value={pageSize.toString()}
-            onChangeText={text => {
-              const size = parseInt(text, 10);
-              if (!isNaN(size) && size > 0) setPageSize(size);
-            }}
-          />
+            {/* Pagination Controls */}
+            {totalPages > 1 && (
+              <View style={styles.paginationContainer}>
+                <TouchableOpacity
+                  onPress={() => setCurrentPage(currentPage - 1)}
+                  disabled={currentPage === 1}
+                  style={[styles.paginationButton, { backgroundColor: currentPage === 1 ? theme.disabled : theme.primary }]}
+                >
+                  <Text style={styles.paginationButtonText}>Previous</Text>
+                </TouchableOpacity>
+                <Text style={[styles.paginationText, { color: theme.text }]}>Page {currentPage} of {totalPages}</Text>
+                <TouchableOpacity
+                  onPress={() => setCurrentPage(currentPage + 1)}
+                  disabled={currentPage === totalPages}
+                  style={[styles.paginationButton, { backgroundColor: currentPage === totalPages ? theme.disabled : theme.primary }]}
+                >
+                  <Text style={styles.paginationButtonText}>Next</Text>
+                </TouchableOpacity>
+                <View style={styles.pageSizeContainer}>
+                  <Text style={[styles.pageSizeLabel, { color: theme.text }]}>Size:</Text>
+                  <TextInput
+                    style={[styles.pageSizeInput, { backgroundColor: theme.cardBackground, borderColor: theme.border, color: theme.text }]}
+                    keyboardType="numeric"
+                    value={pageSize.toString()}
+                    onChangeText={text => {
+                      const size = parseInt(text, 10);
+                      if (!isNaN(size) && size > 0) setPageSize(size);
+                    }}
+                  />
+                </View>
+              </View>
+            )}
+          </SlideInView>
+          <View style={styles.spacer} />
         </View>
       </ScrollView>
 
@@ -519,63 +553,63 @@ export default function LeadAssignmentScreen() {
       <Modal
         visible={showBulkAssignmentModal}
         transparent
-        animationType="slide"
+        animationType="fade"
         onRequestClose={() => setShowBulkAssignmentModal(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Bulk Assign Leads</Text>
-            
+          <View style={[styles.modalContent, { backgroundColor: theme.background }]}>
+            <Text style={[styles.modalTitle, { color: theme.text }]}>Bulk Assign Leads</Text>
             {selectedOperator && (
-              <View style={styles.selectedOperatorInfo}>
-                <Text style={styles.selectedOperatorName}>{selectedOperator.name}</Text>
-                <Text style={styles.selectedOperatorRole}>{selectedOperator.role.replace('_', ' ').toUpperCase()}</Text>
-                <Text style={styles.selectedOperatorEmail}>{selectedOperator.email}</Text>
+              <View style={[styles.selectedOperatorInfo, { backgroundColor: theme.backgroundSecondary }]}>
+                <Text style={[styles.selectedOperatorName, { color: theme.text }]}>{selectedOperator.name}</Text>
+                <Text style={[styles.selectedOperatorRole, { color: theme.primary }]}>{selectedOperator.role.replace('_', ' ').toUpperCase()}</Text>
+                <Text style={[styles.selectedOperatorEmail, { color: theme.textSecondary }]}>{selectedOperator.email}</Text>
               </View>
             )}
-
             <View style={styles.bulkSizeSelection}>
-              <Text style={styles.bulkSizeLabel}>Select number of leads to assign:</Text>
+              <Text style={[styles.bulkSizeLabel, { color: theme.text }]}>Select number of leads to assign:</Text>
               <View style={styles.bulkSizeButtons}>
                 {BULK_OPTIONS.map((size) => (
                   <TouchableOpacity
                     key={size}
-                    style={[styles.bulkSizeButton, selectedBulkSize === size && styles.bulkSizeButtonActive]}
+                    style={[
+                      styles.bulkSizeButton,
+                      { backgroundColor: selectedBulkSize === size ? theme.primary : theme.backgroundSecondary },
+                      { borderColor: selectedBulkSize === size ? theme.primary : theme.border },
+                    ]}
                     onPress={() => setSelectedBulkSize(size)}
                   >
-                    <Text style={[styles.bulkSizeButtonText, selectedBulkSize === size && styles.bulkSizeButtonTextActive]}>
+                    <Text style={[styles.bulkSizeButtonText, { color: selectedBulkSize === size ? theme.textInverse : theme.text }]}>
                       {size}
                     </Text>
                   </TouchableOpacity>
                 ))}
               </View>
             </View>
-
-            <View style={styles.bulkInfo}>
-              <Text style={styles.bulkInfoText}>
+            <View style={[styles.bulkInfo, { backgroundColor: theme.primaryLight }]}>
+              <Text style={[styles.bulkInfoText, { color: theme.primary }]}>
                 Will assign {Math.min(selectedBulkSize, unassignedLeads.length)} unassigned leads to {selectedOperator?.name}
               </Text>
-              <Text style={styles.bulkInfoSubtext}>
+              <Text style={[styles.bulkInfoSubtext, { color: theme.primary }]}>
                 Available unassigned leads: {unassignedLeads.length}
               </Text>
             </View>
-
             <View style={styles.modalActions}>
               <TouchableOpacity
-                style={styles.cancelButton}
+                style={[styles.cancelButton, { backgroundColor: theme.backgroundSecondary }]}
                 onPress={() => {
                   setShowBulkAssignmentModal(false);
                   setSelectedOperator(null);
                 }}
               >
-                <Text style={styles.cancelButtonText}>Cancel</Text>
+                <Text style={[styles.cancelButtonText, { color: theme.textSecondary }]}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.confirmButton, !selectedOperator && styles.confirmButtonDisabled]}
+                style={[styles.confirmButton, { backgroundColor: theme.primary, opacity: !selectedOperator ? 0.7 : 1 }]}
                 onPress={handleBulkAssignment}
                 disabled={!selectedOperator}
               >
-                <Text style={styles.confirmButtonText}>Assign {Math.min(selectedBulkSize, unassignedLeads.length)} Leads</Text>
+                <Text style={[styles.confirmButtonText, { color: theme.textInverse }]}>Assign {Math.min(selectedBulkSize, unassignedLeads.length)} Leads</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -588,12 +622,27 @@ export default function LeadAssignmentScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+  },
+  contentScroll: {
+    flex: 1,
+  },
+  contentContainer: {
+    paddingHorizontal: 20,
+    maxWidth: 1200,
+    width: '100%',
+    alignSelf: 'center',
   },
   header: {
     paddingTop: 60,
     paddingBottom: 20,
     paddingHorizontal: 20,
+    borderBottomLeftRadius: 24,
+    borderBottomRightRadius: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 5,
   },
   headerContent: {
     flexDirection: 'row',
@@ -602,199 +651,176 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     fontSize: 24,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
+    fontFamily: 'Inter-Bold',
   },
   headerSubtitle: {
     fontSize: 16,
-    color: '#FECACA',
+    fontFamily: 'Inter-Regular',
     marginTop: 4,
   },
-  content: {
-    flex: 1,
-    paddingHorizontal: 20,
-  },
-  section: {
-    marginBottom: 24,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#1F2937',
-    marginBottom: 16,
+  spacer: {
+    height: 24,
   },
   statsGrid: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    gap: 12,
   },
   statCard: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
     padding: 16,
-    borderRadius: 12,
-    marginHorizontal: 4,
+    borderRadius: 16,
     alignItems: 'center',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.05,
     shadowRadius: 4,
-    elevation: 3,
+    elevation: 2,
   },
   statNumber: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#DC2626',
+    fontSize: 28,
+    fontFamily: 'Inter-Bold',
   },
   statLabel: {
     fontSize: 12,
-    color: '#6B7280',
+    fontFamily: 'Inter-Medium',
     marginTop: 4,
   },
-  filterContainer: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  filterButtons: {
+  sectionHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  sectionTitle: {
+    fontSize: 20,
+    fontFamily: 'Inter-Bold',
+  },
+  filterContainer: {
+    marginBottom: 16,
+    paddingBottom: 8,
+    gap: 12,
   },
   filterButton: {
-    flex: 1,
     paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    marginHorizontal: 4,
-    alignItems: 'center',
-  },
-  filterButtonActive: {
-    backgroundColor: '#DC2626',
+    paddingHorizontal: 16,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
   },
   filterButtonText: {
     fontSize: 12,
-    color: '#6B7280',
-    fontWeight: '500',
-  },
-  filterButtonTextActive: {
-    color: '#FFFFFF',
+    fontFamily: 'Inter-SemiBold',
   },
   operatorCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
+    borderRadius: 16,
     padding: 16,
-    marginBottom: 12,
+    marginBottom: 16,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.05,
     shadowRadius: 4,
-    elevation: 3,
+    elevation: 2,
   },
   operatorHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
   },
   operatorInfo: {
     flex: 1,
   },
   operatorName: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#1F2937',
-    marginBottom: 2,
+    fontSize: 18,
+    fontFamily: 'Inter-Bold',
   },
   operatorRole: {
     fontSize: 12,
-    color: '#DC2626',
-    fontWeight: '500',
-    marginBottom: 2,
+    fontFamily: 'Inter-SemiBold',
+    marginTop: 4,
   },
   operatorEmail: {
     fontSize: 12,
-    color: '#6B7280',
+    fontFamily: 'Inter-Regular',
+    marginTop: 2,
   },
   operatorStats: {
-    alignItems: 'center',
+    alignItems: 'flex-end',
   },
   operatorLeadCount: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#DC2626',
+    fontSize: 24,
+    fontFamily: 'Inter-Bold',
   },
   operatorLeadLabel: {
     fontSize: 10,
-    color: '#6B7280',
-    marginBottom: 4,
+    fontFamily: 'Inter-Medium',
+    marginTop: 4,
   },
   operatorLeads: {
-    marginBottom: 12,
+    marginTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7EB',
+    paddingTop: 16,
   },
   noLeadsText: {
     fontSize: 14,
-    color: '#9CA3AF',
+    fontFamily: 'Inter-Regular',
     fontStyle: 'italic',
     textAlign: 'center',
     paddingVertical: 12,
   },
   assignedLeadItem: {
-    backgroundColor: '#F9FAFB',
     padding: 12,
-    borderRadius: 8,
+    borderRadius: 12,
     marginBottom: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
   assignedLeadInfo: {
     flex: 1,
   },
   leadName: {
     fontSize: 14,
-    fontWeight: '500',
-    color: '#1F2937',
-    marginBottom: 2,
+    fontFamily: 'Inter-SemiBold',
   },
   leadPhone: {
     fontSize: 12,
-    color: '#6B7280',
-    marginBottom: 4,
+    fontFamily: 'Inter-Regular',
+    marginTop: 2,
   },
   statusContainer: {
     flexDirection: 'row',
     alignItems: 'center',
+    marginTop: 4,
   },
   statusText: {
     fontSize: 12,
-    fontWeight: '500',
+    fontFamily: 'Inter-SemiBold',
     marginLeft: 4,
   },
   assignButton: {
-    backgroundColor: '#10B981',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 12,
-    borderRadius: 8,
+    borderRadius: 12,
+    marginTop: 16,
   },
   assignButtonText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '500',
+    fontSize: 16,
+    fontFamily: 'Inter-SemiBold',
     marginLeft: 8,
   },
   leadCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
+    borderRadius: 16,
     padding: 16,
-    marginBottom: 12,
+    marginBottom: 16,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.05,
     shadowRadius: 4,
-    elevation: 3,
+    elevation: 2,
   },
   leadHeader: {
     flexDirection: 'row',
@@ -806,10 +832,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   customerName: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#1F2937',
-    marginBottom: 4,
+    fontSize: 18,
+    fontFamily: 'Inter-Bold',
   },
   leadDetails: {
     marginBottom: 12,
@@ -821,26 +845,23 @@ const styles = StyleSheet.create({
   },
   detailText: {
     fontSize: 14,
-    color: '#6B7280',
+    fontFamily: 'Inter-Regular',
     marginLeft: 8,
     flex: 1,
   },
   assignmentInfo: {
-    backgroundColor: '#F3F4F6',
     padding: 12,
-    borderRadius: 8,
+    borderRadius: 12,
     borderLeftWidth: 4,
-    borderLeftColor: '#3B82F6',
   },
   assignmentLabel: {
     fontSize: 12,
-    fontWeight: '500',
-    color: '#374151',
+    fontFamily: 'Inter-SemiBold',
     marginBottom: 4,
   },
   assignmentText: {
     fontSize: 14,
-    color: '#1F2937',
+    fontFamily: 'Inter-Medium',
   },
   emptyState: {
     alignItems: 'center',
@@ -848,56 +869,110 @@ const styles = StyleSheet.create({
   },
   emptyStateText: {
     fontSize: 18,
-    fontWeight: 'bold',
-    color: '#6B7280',
+    fontFamily: 'Inter-Bold',
     marginTop: 16,
   },
   emptyStateSubtext: {
     fontSize: 14,
-    color: '#9CA3AF',
+    fontFamily: 'Inter-Regular',
     marginTop: 8,
     textAlign: 'center',
   },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+  },
+  searchIcon: {
+    marginRight: 8,
+  },
+  searchInput: {
+    flex: 1,
+    paddingVertical: 12,
+    fontSize: 16,
+    fontFamily: 'Inter-Regular',
+  },
+  leadListContainer: {},
+  paginationContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginVertical: 24,
+    gap: 12,
+    flexWrap: 'wrap',
+  },
+  paginationButton: {
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+  },
+  paginationButtonText: {
+    color: '#FFFFFF',
+    fontWeight: 'bold',
+  },
+  paginationText: {
+    fontFamily: 'Inter-SemiBold',
+  },
+  pageSizeContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginLeft: 16,
+  },
+  pageSizeLabel: {
+    fontFamily: 'Inter-Regular',
+    marginRight: 8,
+  },
+  pageSizeInput: {
+    width: 60,
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 8,
+    textAlign: 'center',
+    fontFamily: 'Inter-Regular',
+  },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   modalContent: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 24,
-    width: width - 40,
-    maxHeight: '80%',
+    width: '90%',
+    maxWidth: 500,
+    borderRadius: 20,
+    padding: 32,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 10,
+    elevation: 10,
   },
   modalTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#1F2937',
-    marginBottom: 16,
+    fontSize: 24,
+    fontFamily: 'Inter-Bold',
+    marginBottom: 8,
     textAlign: 'center',
   },
   selectedOperatorInfo: {
-    backgroundColor: '#F3F4F6',
     padding: 16,
-    borderRadius: 8,
+    borderRadius: 12,
     marginBottom: 16,
   },
   selectedOperatorName: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#1F2937',
+    fontSize: 18,
+    fontFamily: 'Inter-Bold',
   },
   selectedOperatorRole: {
     fontSize: 12,
-    color: '#DC2626',
-    fontWeight: '500',
-    marginTop: 2,
+    fontFamily: 'Inter-SemiBold',
+    marginTop: 4,
   },
   selectedOperatorEmail: {
     fontSize: 12,
-    color: '#6B7280',
+    fontFamily: 'Inter-Regular',
     marginTop: 2,
   },
   bulkSizeSelection: {
@@ -905,91 +980,72 @@ const styles = StyleSheet.create({
   },
   bulkSizeLabel: {
     fontSize: 14,
-    fontWeight: '500',
-    color: '#374151',
+    fontFamily: 'Inter-Medium',
     marginBottom: 8,
   },
   bulkSizeButtons: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
+    gap: 10,
   },
   bulkSizeButton: {
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    backgroundColor: '#F3F4F6',
-    minWidth: 50,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    borderWidth: 1,
+    minWidth: 55,
     alignItems: 'center',
-  },
-  bulkSizeButtonActive: {
-    backgroundColor: '#DC2626',
   },
   bulkSizeButtonText: {
     fontSize: 14,
-    fontWeight: '500',
-    color: '#6B7280',
-  },
-  bulkSizeButtonTextActive: {
-    color: '#FFFFFF',
+    fontFamily: 'Inter-SemiBold',
   },
   bulkInfo: {
-    backgroundColor: '#EBF8FF',
-    padding: 12,
-    borderRadius: 8,
+    padding: 16,
+    borderRadius: 12,
     marginBottom: 16,
   },
   bulkInfoText: {
     fontSize: 14,
-    color: '#1E40AF',
-    fontWeight: '500',
+    fontFamily: 'Inter-Medium',
   },
   bulkInfoSubtext: {
     fontSize: 12,
-    color: '#3B82F6',
+    fontFamily: 'Inter-Regular',
     marginTop: 4,
   },
   modalActions: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: 16,
+    marginTop: 24,
+    gap: 12,
   },
   cancelButton: {
     flex: 1,
     paddingVertical: 12,
     paddingHorizontal: 16,
-    borderRadius: 8,
-    backgroundColor: '#F3F4F6',
-    marginRight: 8,
+    borderRadius: 12,
     alignItems: 'center',
   },
   cancelButtonText: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#6B7280',
+    fontSize: 16,
+    fontFamily: 'Inter-SemiBold',
   },
   confirmButton: {
     flex: 1,
     paddingVertical: 12,
     paddingHorizontal: 16,
-    borderRadius: 8,
-    backgroundColor: '#DC2626',
-    marginLeft: 8,
+    borderRadius: 12,
     alignItems: 'center',
   },
-  confirmButtonDisabled: {
-    backgroundColor: '#D1D5DB',
-  },
   confirmButtonText: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#FFFFFF',
+    fontSize: 16,
+    fontFamily: 'Inter-SemiBold',
   },
   errorText: {
     fontSize: 18,
-    fontWeight: 'bold',
-    color: '#EF4444',
+    fontFamily: 'Inter-Bold',
     textAlign: 'center',
     marginTop: 20,
   },
-}); 
+});
