@@ -167,7 +167,7 @@ export default function SuperAdminLayout() {
         }}
       />
       <Tabs.Screen
-        name="lead-info"
+        name="user/[id]"
         options={{
           href: null,
         }}
