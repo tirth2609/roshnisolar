@@ -893,7 +893,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const getAllUsers = () => appUsers;
   const getActiveUsers = () => appUsers.filter(u => u.is_active);
   const getTechnicians = () => appUsers.filter(u => u.role === 'technician' && u.is_active);
-  const getCallOperators = () => appUsers.filter(u => u.role === 'call_operator' && u.is_active);
+  const getCallOperators = () => appUsers.filter(u => u.role === 'call_operator');
   const getSalesmen = () => appUsers.filter(u => u.role === 'salesman' && u.is_active);
 
   const addUser = async (userData: any): Promise<void> => {
