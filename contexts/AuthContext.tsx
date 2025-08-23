@@ -6,6 +6,7 @@ import React, {
   useContext,
   ReactNode,
 } from 'react';
+import { Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage'; // For custom session storage
 import { supabase } from '../lib/supabase'; // Your Supabase client
 import { User, UserRole, AppUser } from '@/types/auth'; // Import the updated User type from types/auth.ts
@@ -20,6 +21,7 @@ interface AuthContextType {
   signOut: () => Promise<void>;
   logout: () => Promise<void>; // Alias for signOut
   updateUser: (updatedUser: AppUser) => void; // For updating user details in context
+  checkUserStatus: () => Promise<boolean>; // Check if current user is still active
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -42,8 +44,48 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       const storedUser = await AsyncStorage.getItem(USER_SESSION_KEY);
       if (storedUser) {
         const parsedUser: AppUser = JSON.parse(storedUser);
-        setUser(parsedUser);
-        setIsAuthenticated(true);
+        
+        // Check if user is still active by validating with the server
+        try {
+          const { data, error } = await supabase
+            .from('app_users')
+            .select('is_active')
+            .eq('id', parsedUser.id)
+            .single();
+          
+          if (error || !data) {
+            // User not found or error, clear session
+            console.log('❌ User not found or error, clearing session');
+            await AsyncStorage.removeItem(USER_SESSION_KEY);
+            setUser(null);
+            setIsAuthenticated(false);
+            return;
+          }
+          
+          if (!data.is_active) {
+            // User is deactivated, clear session and show message
+            console.log('❌ User is deactivated, clearing session');
+            await AsyncStorage.removeItem(USER_SESSION_KEY);
+            setUser(null);
+            setIsAuthenticated(false);
+            Alert.alert(
+              'Account Deactivated',
+              'Your account has been deactivated. Please contact your administrator.',
+              [{ text: 'OK' }]
+            );
+            return;
+          }
+          
+          // User is active, set session
+          setUser(parsedUser);
+          setIsAuthenticated(true);
+        } catch (validationError) {
+          console.error('Failed to validate user status:', validationError);
+          // If validation fails, clear session for security
+          await AsyncStorage.removeItem(USER_SESSION_KEY);
+          setUser(null);
+          setIsAuthenticated(false);
+        }
       }
     } catch (error) {
       console.error('Failed to load user session from storage:', error);
@@ -134,6 +176,43 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     AsyncStorage.setItem(USER_SESSION_KEY, JSON.stringify(updatedUser)).catch(console.error);
   };
 
+  // Check if current user is still active
+  const checkUserStatus = async (): Promise<boolean> => {
+    if (!user) return false;
+    
+    try {
+      const { data, error } = await supabase
+        .from('app_users')
+        .select('is_active')
+        .eq('id', user.id)
+        .single();
+      
+      if (error || !data) {
+        // User not found, clear session
+        await signOut();
+        return false;
+      }
+      
+      if (!data.is_active) {
+        // User is deactivated, clear session
+        Alert.alert(
+          'Account Deactivated',
+          'Your account has been deactivated. Please contact your administrator.',
+          [{ text: 'OK' }]
+        );
+        await signOut();
+        return false;
+      }
+      
+      return true;
+    } catch (error) {
+      console.error('Error checking user status:', error);
+      // If check fails, clear session for security
+      await signOut();
+      return false;
+    }
+  };
+
   const value = {
     user,
     isAuthenticated,
@@ -142,6 +221,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     signOut,
     logout: signOut, // Alias for signOut
     updateUser,
+    checkUserStatus,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

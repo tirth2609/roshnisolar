@@ -112,26 +112,45 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [predefinedMessages, setPredefinedMessages] = useState<PredefinedMessage[]>([]);
   const [duplicateLeadLogs, setDuplicateLeadLogs] = useState<DuplicateLeadLog[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const { user, isAuthenticated } = useAuth();
+  const { user, isAuthenticated, signOut } = useAuth();
 
   // Function to fetch all leads from Supabase
   const fetchLeads = async () => {
     try {
-      console.log('🔍 Fetching ALL leads from Supabase...');
-      const { data, error, count } = await supabase
-        .from('leads')
-        .select('*', { count: 'exact' })
-        .order('created_at', { ascending: false })
-        .range(0, 10000); // fetch up to 100,000 leads
+      // Check if user is still active before fetching data
+      if (user && !user.isActive) {
+        console.log('❌ User is deactivated, cannot fetch leads');
+        return;
+      }
+
+      console.log('🔍 Fetching leads from Supabase with enhanced security...');
+      
+      // Use enhanced data access with user status validation
+      const { data, error } = await supabase.functions.invoke('enhancedDataAccess', {
+        body: {
+          action: 'select',
+          table: 'leads',
+          operation: 'select',
+          filters: null // Will use RLS policies automatically
+        }
+      });
 
       if (error) {
         console.error('❌ Error fetching leads:', error);
         throw error;
       }
 
-      console.log('✅ Leads fetched successfully:', data?.length || 0, 'leads found');
+      if (data?.error === 'Account deactivated') {
+        // User was deactivated during the request
+        console.log('❌ User account deactivated during request');
+        await signOut();
+        return;
+      }
+
+      console.log('✅ Leads fetched successfully with database-level security:', data?.data?.length || 0, 'leads found');
+      
       // Map snake_case fields to match the updated Lead interface
-      const mappedLeads = (data || []).map((lead: any) => ({
+      const mappedLeads = (data?.data || []).map((lead: any) => ({
         id: lead.id,
         customer_name: lead.customer_name,
         phone_number: lead.phone_number,
@@ -174,6 +193,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   // Function to fetch customers from Supabase
   const fetchCustomers = async () => {
     try {
+      // Check if user is still active before fetching data
+      if (user && !user.isActive) {
+        console.log('❌ User is deactivated, cannot fetch customers');
+        return;
+      }
+
       const { data, error } = await supabase.from('customers').select('*').order('created_at', { ascending: false });
       if (error) throw error;
       
@@ -316,7 +341,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
 
   useEffect(() => {
-    if (isAuthenticated) {
+    if (isAuthenticated && user) {
       const loadData = async () => {
         setIsLoading(true);
         await Promise.all([
@@ -332,6 +357,43 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         setIsLoading(false);
       };
       loadData();
+      
+      // Set up periodic user status check every 5 minutes
+      const statusCheckInterval = setInterval(async () => {
+        if (user) {
+          try {
+            const { data, error } = await supabase
+              .from('app_users')
+              .select('is_active')
+              .eq('id', user.id)
+              .single();
+            
+            if (error || !data || !data.is_active) {
+              // User is deactivated or not found, clear data and redirect to login
+              console.log('❌ User status check failed or user deactivated');
+              setLeads([]);
+              setSupportTickets([]);
+              setCustomers([]);
+              setAppUsers([]);
+              setCallLaterLogs([]);
+              setDuplicateLeadLogs([]);
+              setCallLogs([]);
+              setPredefinedMessages([]);
+              
+              // Show alert and redirect to login
+              Alert.alert(
+                'Account Deactivated',
+                'Your account has been deactivated. You will be redirected to login.',
+                [{ text: 'OK' }]
+              );
+            }
+          } catch (error) {
+            console.error('Error checking user status:', error);
+          }
+        }
+      }, 5 * 60 * 1000); // Check every 5 minutes
+      
+      return () => clearInterval(statusCheckInterval);
     } else {
       setLeads([]);
       setSupportTickets([]);
@@ -343,11 +405,17 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       setPredefinedMessages([]);
       setIsLoading(false);
     }
-  }, [isAuthenticated]);
+  }, [isAuthenticated, user]);
 
   const addLead = async (leadData: NewLeadData): Promise<void> => {
     if (!user) {
       Alert.alert('Error', 'User not authenticated.');
+      return;
+    }
+
+    // Check if user is still active
+    if (!user.isActive) {
+      Alert.alert('Error', 'Your account has been deactivated. Please contact your administrator.');
       return;
     }
 
@@ -377,6 +445,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const updateLeadStatus = async (leadId: string, status: LeadStatus, notes?: string): Promise<void> => {
     if (!user) {
       Alert.alert('Error', 'User not authenticated.');
+      return;
+    }
+
+    // Check if user is still active
+    if (!user.isActive) {
+      Alert.alert('Error', 'Your account has been deactivated. Please contact your administrator.');
       return;
     }
     
@@ -636,6 +710,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   };
 
   const getLeadsByUser = (userId: string, userRole: string): Lead[] => {
+    // Check if current user is active before returning data
+    if (user && !user.isActive) {
+      console.log('❌ User is deactivated, cannot access leads');
+      return [];
+    }
+
     switch (userRole) {
       case 'salesman':
         return leads.filter(lead => lead.salesman_id === userId);
