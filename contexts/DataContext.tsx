@@ -57,6 +57,7 @@ interface DataContextType {
   getUserLeads: (userId: string) => Lead[];
   getUserTickets: (userId: string) => SupportTicket[];
   getAllUsers: () => AppUserFromDB[];
+  getActiveUsers: () => AppUserFromDB[];
   getTechnicians: () => AppUserFromDB[];
   getCallOperators: () => AppUserFromDB[];
   getTeamLeads: () => AppUserFromDB[];
@@ -65,7 +66,7 @@ interface DataContextType {
   getUserWorkStats: (userId: string) => any;
   addUser: (userData: any) => Promise<void>;
   updateUser: (userId: string, userData: any) => Promise<void>;
-  deleteUser: (userId: string) => Promise<void>;
+  deleteUser: (userId: string, reassignToUserId?: string) => Promise<void>;
   toggleUserStatus: (userId: string, currentStatus: boolean) => Promise<void>;
   bulkImportLeads: (leadsData: NewLeadData[]) => Promise<void>;
   getAnalytics: () => any;
@@ -873,6 +874,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   };
 
   const getAllUsers = () => appUsers;
+  const getActiveUsers = () => appUsers.filter(u => u.is_active);
   const getTechnicians = () => appUsers.filter(u => u.role === 'technician' && u.is_active);
   const getCallOperators = () => appUsers.filter(u => u.role === 'call_operator' && u.is_active);
   const getSalesmen = () => appUsers.filter(u => u.role === 'salesman' && u.is_active);
@@ -929,7 +931,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const deleteUser = async (userId: string): Promise<void> => {
+  const deleteUser = async (userId: string, reassignToUserId?: string): Promise<void> => {
     if (!user) {
       Alert.alert('Error', 'User not authenticated.');
       return;
@@ -941,11 +943,21 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         throw new Error('You cannot delete your own account');
       }
 
-      const { error } = await supabase.from('app_users').delete().eq('id', userId);
+      // Use the Edge Function for proper deletion with reassignment
+      const { data, error } = await supabase.functions.invoke('deleteUser', {
+        body: { userId, reassignToUserId }
+      });
+
       if (error) throw error;
       
-      // Refresh users list
-      await fetchAppUsers();
+      if (data.success) {
+        // Refresh users list
+        await fetchAppUsers();
+        // Refresh leads to get updated assignments
+        await fetchLeads();
+      } else {
+        throw new Error(data.error || 'Failed to delete user');
+      }
     } catch (error: any) {
       console.error('Error deleting user:', error.message);
       Alert.alert('Error', `Failed to delete user: ${error.message}`);
@@ -1645,6 +1657,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       getUserLeads,
       getUserTickets,
       getAllUsers,
+      getActiveUsers,
       getTechnicians,
       getCallOperators,
       getTeamLeads,

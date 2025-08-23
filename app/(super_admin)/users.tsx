@@ -49,11 +49,13 @@ export default function UsersManagementScreen() {
   const router = useRouter();
   const { 
     getAllUsers, 
+    getActiveUsers,
     addUser, 
     updateUser, 
     deleteUser, 
     toggleUserStatus,
     getUserLeads,
+    getUserTickets,
     getUserWorkStats,
     isLoading, 
     refreshData 
@@ -65,6 +67,8 @@ export default function UsersManagementScreen() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [showUserDetailsModal, setShowUserDetailsModal] = useState(false);
   const [showAnalyticsModal, setShowAnalyticsModal] = useState(false);
+  const [showReassignModal, setShowReassignModal] = useState(false);
+
   const [selectedUser, setSelectedUser] = useState<any>(null);
   const [newUser, setNewUser] = useState({
     name: '',
@@ -90,14 +94,16 @@ export default function UsersManagementScreen() {
   });
 
   const getRoleStats = () => {
+    const activeUsers = getActiveUsers();
     return {
       total: users.length,
-      salesman: users.filter(u => u.role === 'salesman').length,
-      call_operator: users.filter(u => u.role === 'call_operator').length,
-      technician: users.filter(u => u.role === 'technician').length,
-      team_lead: users.filter(u => u.role === 'team_lead').length,
-      super_admin: users.filter(u => u.role === 'super_admin').length,
-      active: users.filter(u => u.is_active).length,
+      active: activeUsers.length,
+      inactive: users.length - activeUsers.length,
+      salesman: activeUsers.filter(u => u.role === 'salesman').length,
+      call_operator: activeUsers.filter(u => u.role === 'call_operator').length,
+      technician: activeUsers.filter(u => u.role === 'technician').length,
+      team_lead: activeUsers.filter(u => u.role === 'team_lead').length,
+      super_admin: activeUsers.filter(u => u.role === 'super_admin').length,
     };
   };
 
@@ -123,6 +129,18 @@ export default function UsersManagementScreen() {
   };
 
   const getUserWorkStatistics = (user: any, period: 'daily' | 'weekly' | 'monthly' = 'daily') => {
+    // Only show statistics for active users
+    if (!user.is_active) {
+      return {
+        periodWork: 0,
+        periodCompleted: 0,
+        totalWork: 0,
+        totalCompleted: 0,
+        conversionRate: '0',
+        periodConversionRate: '0'
+      };
+    }
+
     const { start, end } = getDateRange(period);
     const userLeads = getUserLeads(user.id);
     const workStats = getUserWorkStats(user.id);
@@ -196,7 +214,7 @@ export default function UsersManagementScreen() {
         };
       
       case 'team_lead':
-        const teamMembers = users.filter(u => u.role === 'call_operator' && u.is_active);
+        const teamMembers = getActiveUsers().filter(u => u.role === 'call_operator');
         const periodManagedLeads = periodLeads.length;
         const totalManagedLeads = userLeads.length;
         
@@ -288,6 +306,29 @@ export default function UsersManagementScreen() {
   };
 
   const handleDeleteUser = (user: any) => {
+    // Check if user has assigned leads or tickets
+    const userLeads = getUserLeads(user.id);
+    const userTickets = getUserTickets(user.id);
+    
+    if (userLeads.length > 0 || userTickets.length > 0) {
+      Alert.alert(
+        'User Has Assigned Work',
+        `${user.name} has ${userLeads.length} assigned leads and ${userTickets.length} assigned tickets.\n\nWould you like to reassign their work to another user before deletion?`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Reassign & Delete',
+            style: 'destructive',
+            onPress: () => openReassignModal(user),
+          },
+        ]
+      );
+    } else {
+      confirmDeleteUser(user);
+    }
+  };
+
+  const confirmDeleteUser = (user: any) => {
     Alert.alert(
       'Delete User',
       `Are you sure you want to delete ${user.name}? This action cannot be undone.`,
@@ -307,6 +348,44 @@ export default function UsersManagementScreen() {
         },
       ]
     );
+  };
+
+  const openReassignModal = (user: any) => {
+    // Find suitable users for reassignment based on role
+    const suitableUsers = getActiveUsers().filter(u => 
+      u.id !== user.id && 
+      u.is_active && 
+      (u.role === user.role || 
+       (user.role === 'call_operator' && u.role === 'call_operator') ||
+       (user.role === 'technician' && u.role === 'technician') ||
+       (user.role === 'salesman' && u.role === 'salesman'))
+    );
+
+    if (suitableUsers.length === 0) {
+      Alert.alert(
+        'No Suitable Users',
+        'No active users found with the same role for reassignment. Please manually reassign the work first.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+
+    // Show user selection modal
+    setSelectedUser(user);
+    setShowReassignModal(true);
+  };
+
+  const handleReassignAndDelete = async (reassignToUserId: string) => {
+    if (!selectedUser) return;
+
+    try {
+      await deleteUser(selectedUser.id, reassignToUserId);
+      setShowReassignModal(false);
+      setSelectedUser(null);
+      Alert.alert('Success', 'User deleted and work reassigned successfully!');
+    } catch (error) {
+      // Error is already handled in the DataContext
+    }
   };
 
   const handleToggleUserStatus = async (user: any) => {
@@ -1113,6 +1192,76 @@ export default function UsersManagementScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Reassign User Work Modal */}
+      <Modal
+        visible={showReassignModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowReassignModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Reassign User Work</Text>
+              <TouchableOpacity
+                style={styles.closeIconButton}
+                onPress={() => setShowReassignModal(false)}
+              >
+                <X size={20} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+            
+            <Text style={styles.modalSubtitle}>
+              {selectedUser ? `Select a user to reassign ${selectedUser.name}'s work to:` : ''}
+            </Text>
+
+            <ScrollView style={styles.reassignUserList}>
+              {selectedUser && getActiveUsers()
+                .filter(u => 
+                  u.id !== selectedUser.id && 
+                  u.is_active && 
+                  (u.role === selectedUser.role || 
+                   (selectedUser.role === 'call_operator' && u.role === 'call_operator') ||
+                   (selectedUser.role === 'technician' && u.role === 'technician') ||
+                   (selectedUser.role === 'salesman' && u.role === 'salesman'))
+                )
+                .map((reassignUser) => (
+                  <TouchableOpacity
+                    key={reassignUser.id}
+                    style={styles.reassignUserItem}
+                    onPress={() => handleReassignAndDelete(reassignUser.id)}
+                  >
+                    <View style={styles.reassignUserInfo}>
+                      <View style={styles.reassignUserAvatar}>
+                        <Text style={styles.reassignUserAvatarText}>
+                          {reassignUser.name.split(' ').map((n: string) => n[0]).join('')}
+                        </Text>
+                      </View>
+                      <View style={styles.reassignUserDetails}>
+                        <Text style={styles.reassignUserName}>{reassignUser.name}</Text>
+                        <Text style={styles.reassignUserRole}>{reassignUser.role.replace('_', ' ')}</Text>
+                        <Text style={styles.reassignUserEmail}>{reassignUser.email}</Text>
+                      </View>
+                    </View>
+                    <View style={styles.reassignUserAction}>
+                      <Text style={styles.reassignUserActionText}>Select</Text>
+                    </View>
+                  </TouchableOpacity>
+                ))}
+            </ScrollView>
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={styles.cancelButton}
+                onPress={() => setShowReassignModal(false)}
+              >
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -1399,6 +1548,14 @@ const styles = StyleSheet.create({
     color: '#1E293B',
     marginBottom: 20,
     textAlign: 'center',
+  },
+  modalSubtitle: {
+    fontSize: 14,
+    fontFamily: 'Inter-Regular',
+    color: '#64748B',
+    marginBottom: 16,
+    textAlign: 'center',
+    lineHeight: 20,
   },
   formContainer: {
     marginBottom: 20,
@@ -1720,6 +1877,71 @@ const styles = StyleSheet.create({
   overallStatCard: {
     alignItems: 'center',
     flex: 1,
+  },
+  reassignUserList: {
+    maxHeight: 300,
+    marginVertical: 16,
+  },
+  reassignUserItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 16,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  reassignUserInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  reassignUserAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#7C3AED',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  reassignUserAvatarText: {
+    fontSize: 16,
+    fontFamily: 'Inter-Bold',
+    color: '#FFFFFF',
+  },
+  reassignUserDetails: {
+    flex: 1,
+  },
+  reassignUserName: {
+    fontSize: 16,
+    fontFamily: 'Inter-SemiBold',
+    color: '#1E293B',
+    marginBottom: 2,
+  },
+  reassignUserRole: {
+    fontSize: 12,
+    fontFamily: 'Inter-Medium',
+    color: '#7C3AED',
+    marginBottom: 2,
+  },
+  reassignUserEmail: {
+    fontSize: 12,
+    fontFamily: 'Inter-Regular',
+    color: '#64748B',
+  },
+  reassignUserAction: {
+    backgroundColor: '#10B981',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  reassignUserActionText: {
+    fontSize: 14,
+    fontFamily: 'Inter-Medium',
+    color: '#FFFFFF',
   },
   overallStatNumber: {
     fontSize: 18,
