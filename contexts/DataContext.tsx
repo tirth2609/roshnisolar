@@ -123,34 +123,23 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      console.log('🔍 Fetching leads from Supabase with enhanced security...');
+      console.log('🔍 Fetching leads from Supabase with RLS security...');
       
-      // Use enhanced data access with user status validation
-      const { data, error } = await supabase.functions.invoke('enhancedDataAccess', {
-        body: {
-          action: 'select',
-          table: 'leads',
-          operation: 'select',
-          filters: null // Will use RLS policies automatically
-        }
-      });
+      // Use direct Supabase query - RLS policies will handle security automatically
+      const { data, error } = await supabase
+        .from('leads')
+        .select('*')
+        .order('created_at', { ascending: false });
 
       if (error) {
         console.error('❌ Error fetching leads:', error);
         throw error;
       }
 
-      if (data?.error === 'Account deactivated') {
-        // User was deactivated during the request
-        console.log('❌ User account deactivated during request');
-        await signOut();
-        return;
-      }
-
-      console.log('✅ Leads fetched successfully with database-level security:', data?.data?.length || 0, 'leads found');
+      console.log('✅ Leads fetched successfully with RLS security:', data?.length || 0, 'leads found');
       
       // Map snake_case fields to match the updated Lead interface
-      const mappedLeads = (data?.data || []).map((lead: any) => ({
+      const mappedLeads = (data || []).map((lead: any) => ({
         id: lead.id,
         customer_name: lead.customer_name,
         phone_number: lead.phone_number,
@@ -199,8 +188,13 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
+      console.log('🔍 Fetching customers from Supabase with RLS security...');
+      
+      // Use direct Supabase query - RLS policies will handle security automatically
       const { data, error } = await supabase.from('customers').select('*').order('created_at', { ascending: false });
       if (error) throw error;
+      
+      console.log('✅ Customers fetched successfully with RLS security:', data?.length || 0, 'customers found');
       
       // Map snake_case fields to camelCase
       const mappedCustomers = (data || []).map((customer: any) => ({
