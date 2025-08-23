@@ -1,5 +1,5 @@
 import { Tabs } from 'expo-router';
-import { BarChart3, Users, User, UserPlus, Activity, RefreshCw, MessageSquare, Phone } from 'lucide-react-native';
+import { BarChart3, Users, User, UserPlus, Activity, RefreshCw, MessageSquare, Phone, User2 } from 'lucide-react-native';
 import { useAuth } from '@/contexts/AuthContext';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'expo-router';
@@ -20,8 +20,22 @@ export default function SuperAdminLayout() {
     // Only check after authentication is loaded and user is not null/undefined
     if (!isLoading && user != null) {
       if (isAuthenticated && user) {
-        if (user.role !== 'super_admin') {
-          setRedirectPath('/login');
+        if (user.role !== 'super_admin' && user.role !== 'team_lead') {
+          // Set redirect path instead of immediately navigating
+          console.log('SuperAdminLayout: redirecting, user.role =', user.role);
+          switch (user.role) {
+            case 'salesman':
+              setRedirectPath('/(salesman)');
+              break;
+            case 'call_operator':
+              setRedirectPath('/(call_operator)');
+              break;
+            case 'technician':
+              setRedirectPath('/(technician)');
+              break;
+            default:
+              setRedirectPath('/login');
+          }
           setShouldRedirect(true);
         }
       } else if (!isAuthenticated) {
@@ -58,7 +72,7 @@ export default function SuperAdminLayout() {
   }
 
   // Don't render if user is not authenticated or doesn't have proper role
-  if (!isAuthenticated || !user || user.role !== 'super_admin') {
+  if (!isAuthenticated || !user || (user.role !== 'super_admin' && user.role !== 'team_lead')) {
     return null;
   }
 
@@ -119,6 +133,15 @@ export default function SuperAdminLayout() {
         }}
       />
       <Tabs.Screen
+        name="duplicate-leads"
+        options={{
+          title: 'Duplicate Leads',
+          tabBarIcon: ({ size, color }) => (
+            <User2 size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="users"
         options={{
           title: 'Users',
@@ -167,12 +190,18 @@ export default function SuperAdminLayout() {
         }}
       />
       <Tabs.Screen
+        name="lead-info"
+        options={{
+          href: null,
+        }}
+      />
+       <Tabs.Screen
         name="user/[id]"
         options={{
           href: null,
         }}
       />
-
+    
     </Tabs>
   );
 }
