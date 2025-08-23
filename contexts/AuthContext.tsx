@@ -34,72 +34,68 @@ interface AuthProviderProps {
 const USER_SESSION_KEY = 'user_session';
 
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
-  const [user, setUser] = useState<AppUser | null>(null);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
+    const [user, setUser] = useState<AppUser | null>(null);
+    const [isAuthenticated, setIsAuthenticated] = useState(false);
+    const [isLoading, setIsLoading] = useState(true);
 
-  // Function to load session from AsyncStorage
-  const loadSession = async () => {
-    try {
-      const storedUser = await AsyncStorage.getItem(USER_SESSION_KEY);
-      if (storedUser) {
-        const parsedUser: AppUser = JSON.parse(storedUser);
-        
-        // Check if user is still active by validating with the server
+    const loadSession = async () => {
         try {
-          const { data, error } = await supabase
-            .from('app_users')
-            .select('is_active, role')
-            .eq('id', parsedUser.id)
-            .single();
-          
-          if (error || !data) {
-            // User not found or error, clear session
-            console.log('❌ User not found or error, clearing session');
-            await AsyncStorage.removeItem(USER_SESSION_KEY);
-            setUser(null);
-            setIsAuthenticated(false);
-            return;
-          }
-          
-          // FIXED: Super admins can access regardless of status
-          if (!data.is_active && data.role !== 'super_admin') {
-            // User is deactivated (and not super admin), clear session and show message
-            console.log('❌ User is deactivated, clearing session');
-            await AsyncStorage.removeItem(USER_SESSION_KEY);
-            setUser(null);
-            setIsAuthenticated(false);
-            Alert.alert(
-              'Account Deactivated',
-              'Your account has been deactivated. Please contact your administrator.',
-              [{ text: 'OK' }]
-            );
-            return;
-          }
-          
-          // User is active OR super admin, set session
-          const updatedUser = {
-            ...parsedUser,
-            isActive: data.is_active || data.role === 'super_admin' // FIXED: Super admins always active
-          };
-          
-          setUser(updatedUser);
-          setIsAuthenticated(true);
-          console.log('✅ Session loaded successfully:', updatedUser.email, 'Role:', updatedUser.role, 'Active:', updatedUser.isActive);
-        } catch (validationError) {
-          console.error('Failed to validate user status:', validationError);
-          // If validation fails, clear session for security
-          await AsyncStorage.removeItem(USER_SESSION_KEY);
-          setUser(null);
-          setIsAuthenticated(false);
+            const storedUser = await AsyncStorage.getItem(USER_SESSION_KEY);
+            if (storedUser) {
+                const parsedUser: AppUser = JSON.parse(storedUser);
+                try {
+                    const { data, error } = await supabase
+                        .from('app_users')
+                        .select('is_active, role')
+                        .eq('id', parsedUser.id)
+                        .single();
+
+                    if (error || !data) {
+                        console.log('❌ User not found or error, clearing session');
+                        await AsyncStorage.removeItem(USER_SESSION_KEY);
+                        setUser(null);
+                        setIsAuthenticated(false);
+                        return;
+                    }
+                    
+                    // FIXED: A super_admin's account is always considered active.
+                    const isUserActive = data.is_active || data.role === 'super_admin';
+
+                    if (!isUserActive) {
+                        console.log('❌ User is deactivated, clearing session');
+                        await AsyncStorage.removeItem(USER_SESSION_KEY);
+                        setUser(null);
+                        setIsAuthenticated(false);
+                        Alert.alert(
+                            'Account Deactivated',
+                            'Your account has been deactivated. Please contact your administrator.',
+                            [{ text: 'OK' }]
+                        );
+                        return;
+                    }
+
+                    // User is active OR is a super admin, set the session
+                    const updatedUser = {
+                        ...parsedUser,
+                        isActive: isUserActive, // Set isActive based on the corrected logic
+                    };
+
+                    setUser(updatedUser);
+                    setIsAuthenticated(true);
+                    console.log('✅ Session loaded successfully:', updatedUser.email, 'Role:', updatedUser.role, 'Active:', updatedUser.isActive);
+                } catch (validationError) {
+                    console.error('Failed to validate user status:', validationError);
+                    await AsyncStorage.removeItem(USER_SESSION_KEY);
+                    setUser(null);
+                    setIsAuthenticated(false);
+                }
+            }
+        } catch (error) {
+            console.error('Failed to load user session from storage:', error);
+        } finally {
+            setIsLoading(false);
         }
-      }
-    } catch (error) {
-      console.error('Failed to load user session from storage:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+    };
 
   useEffect(() => {
     loadSession();
