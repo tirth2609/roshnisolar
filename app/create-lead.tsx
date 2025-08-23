@@ -81,6 +81,45 @@ export default function CreateLeadScreen() {
 
     setIsSubmitting(true);
     try {
+      // First, check for duplicate leads
+      const duplicateCheck = await supabase.functions.invoke('checkDuplicateLead', {
+        body: {
+          phoneNumber: formData.phone_number,
+          customerName: formData.customer_name,
+          attemptedBy: {
+            id: user.id,
+            name: user.name
+          },
+          attemptedByRole: user.role,
+          attemptedLeadData: formData
+        }
+      });
+
+      if (duplicateCheck.error) {
+        throw new Error(duplicateCheck.error.message || 'Failed to check for duplicates');
+      }
+
+      const duplicateData = duplicateCheck.data;
+
+      if (duplicateData.isDuplicate) {
+        // Show duplicate information and prevent creation
+        const existingLead = duplicateData.existingLead;
+        Alert.alert(
+          'Duplicate Lead Found',
+          `A lead with phone number ${formData.phone_number} already exists.\n\n` +
+          `Existing Lead Details:\n` +
+          `• Customer: ${existingLead.customer_name}\n` +
+          `• Status: ${existingLead.status}\n` +
+          `• Owner: ${existingLead.owner_name} (${existingLead.owner_role})\n` +
+          `• Created: ${new Date(existingLead.created_at).toLocaleDateString()}\n\n` +
+          `This duplicate attempt has been logged for review.`,
+          [{ text: 'OK' }]
+        );
+        setIsSubmitting(false);
+        return;
+      }
+
+      // No duplicates found, proceed with lead creation
       // Assign to the correct column based on role
       let assignment = {};
       if (user.role === 'call_operator') {
@@ -104,6 +143,7 @@ export default function CreateLeadScreen() {
           salesman_name: user.name,
         };
       }
+      
       // Map and normalize form data
       const newLead = {
         ...mapAndNormalizeLead(formData),

@@ -1,11 +1,12 @@
 // contexts/DataContext.tsx
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { Alert } from 'react-native';
-import { Lead, NewLeadData, LeadStatus, RescheduleData, ScheduleCallData, CallLaterLog, CallLaterData, LeadStatusUpdateData } from '@/types/leads';
+import { Lead, NewLeadData, LeadStatus, RescheduleData, ScheduleCallData, CallLaterLog, CallLaterData, LeadStatusUpdateData, DuplicateLeadLog, DuplicateLeadInfo } from '@/types/leads';
 import { SupportTicket, NewTicketData, TicketStatus } from '@/types/support';
 import { Customer, NewCustomerData, CustomerConversionData, ProjectStatus } from '@/types/customers';
 import { CallLog } from '@/types/logs';
 import { PredefinedMessage, CreateMessageData, UpdateMessageData } from '@/types/messages';
+
 import { useAuth } from './AuthContext';
 import { supabase } from '../lib/supabase';
 import { NotificationService } from '../lib/notifications';
@@ -29,6 +30,7 @@ interface DataContextType {
   callLaterLogs: CallLaterLog[];
   callLogs: CallLog[];
   predefinedMessages: PredefinedMessage[];
+  duplicateLeadLogs: DuplicateLeadLog[];
   addLead: (leadData: NewLeadData) => Promise<void>;
   updateLeadStatus: (leadId: string, status: LeadStatus, notes?: string) => Promise<void>;
   updateLeadStatusWithCallLater: (data: LeadStatusUpdateData) => Promise<void>;
@@ -84,6 +86,10 @@ interface DataContextType {
   deletePredefinedMessage: (messageId: string) => Promise<void>;
   getPredefinedMessages: () => PredefinedMessage[];
   getPredefinedMessagesByCategory: (category: string) => PredefinedMessage[];
+  // Duplicate Lead Logs functions
+  fetchDuplicateLeadLogs: () => Promise<void>;
+  getDuplicateLeadInfo: (logId: string) => DuplicateLeadInfo | null;
+
   isLoading: boolean;
   refreshData: () => Promise<void>;
   fetchLeads: () => Promise<void>;
@@ -103,6 +109,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [callLaterLogs, setCallLaterLogs] = useState<CallLaterLog[]>([]);
   const [callLogs, setCallLogs] = useState<CallLog[]>([]);
   const [predefinedMessages, setPredefinedMessages] = useState<PredefinedMessage[]>([]);
+  const [duplicateLeadLogs, setDuplicateLeadLogs] = useState<DuplicateLeadLog[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const { user, isAuthenticated } = useAuth();
 
@@ -263,6 +270,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+
+
   const fetchCallLogs = async () => {
     try {
       const { data, error } = await supabase
@@ -303,6 +312,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+
+
   useEffect(() => {
     if (isAuthenticated) {
       const loadData = async () => {
@@ -313,8 +324,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           fetchSupportTickets(), 
           fetchCustomers(),
           fetchCallLaterLogs(),
+          fetchDuplicateLeadLogs(), // Added fetchDuplicateLeadLogs
           fetchCallLogs(),
-          fetchPredefinedMessages(),
+          fetchPredefinedMessages(),// Added fetchTeamLeadAssignments
         ]);
         setIsLoading(false);
       };
@@ -325,6 +337,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       setCustomers([]);
       setAppUsers([]);
       setCallLaterLogs([]);
+      setDuplicateLeadLogs([]); // Added setDuplicateLeadLogs
       setCallLogs([]);
       setPredefinedMessages([]);
       setIsLoading(false);
@@ -528,7 +541,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       const { error } = await supabase.from('leads').update({
         call_operator_id: callOperatorId,
         call_operator_name: callOperator.name,
-        status: 'new',
         updated_at: new Date().toISOString()
       }).eq('id', leadId);
       
@@ -578,7 +590,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         case 'call_operator':
           updateData.call_operator_id = newUserId;
           updateData.call_operator_name = newUser.name;
-          updateData.status = 'new';
+          updateData.status = 'contacted';
           break;
         case 'technician':
           updateData.technician_id = newUserId;
@@ -1001,8 +1013,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       fetchSupportTickets(), 
       fetchCustomers(),
       fetchCallLaterLogs(),
+      fetchDuplicateLeadLogs(), // Added fetchDuplicateLeadLogs
       fetchCallLogs(),
-      fetchPredefinedMessages(),
+      fetchPredefinedMessages()
     ]);
     setIsLoading(false);
   };
@@ -1019,7 +1032,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       const { error } = await supabase.from('leads').update({
         call_operator_id: callOperatorId,
         call_operator_name: callOperator.name,
-        status: 'new',
         updated_at: new Date().toISOString()
       }).in('id', leadIds);
       
@@ -1551,6 +1563,53 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     return predefinedMessages.filter(message => message.category === category);
   };
 
+  // Implement fetchDuplicateLeadLogs
+  const fetchDuplicateLeadLogs = async (): Promise<void> => {
+    try {
+      const { data, error } = await supabase
+        .from('duplicate_lead_logs')
+        .select('*')
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      const mappedLogs: DuplicateLeadLog[] = (data || []).map((log: any) => ({
+        id: log.id,
+        attempted_phone_number: log.attempted_phone_number,
+        attempted_customer_name: log.attempted_customer_name,
+        attempted_by_id: log.attempted_by_id,
+        attempted_by_name: log.attempted_by_name,
+        attempted_by_role: log.attempted_by_role,
+        existing_lead_id: log.existing_lead_id,
+        existing_lead_customer_name: log.existing_lead_customer_name,
+        existing_lead_phone_number: log.existing_lead_phone_number,
+        existing_lead_status: log.existing_lead_status,
+        existing_lead_owner_name: log.existing_lead_owner_name,
+        existing_lead_owner_role: log.existing_lead_owner_role,
+        attempted_lead_data: log.attempted_lead_data,
+        created_at: log.created_at,
+      }));
+      setDuplicateLeadLogs(mappedLogs);
+    } catch (error: any) {
+      console.error('Error fetching duplicate lead logs:', error.message);
+    }
+  };
+
+  // Implement getDuplicateLeadInfo
+  const getDuplicateLeadInfo = (logId: string): DuplicateLeadInfo | null => {
+    const log = duplicateLeadLogs.find(l => l.id === logId);
+    if (!log) return null;
+
+    const existingLead = leads.find(l => l.id === log.existing_lead_id);
+
+    if (!existingLead) return null;
+
+    return {
+      duplicateLog: log,
+      existingLead: existingLead,
+      attemptedLeadData: log.attempted_lead_data,
+    };
+  };
+
+ 
   return (
     <DataContext.Provider value={{
       leads,
@@ -1559,6 +1618,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       callLaterLogs,
       callLogs,
       predefinedMessages,
+      duplicateLeadLogs,
       addLead,
       updateLeadStatus,
       updateLeadStatusWithCallLater,
@@ -1613,6 +1673,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       deletePredefinedMessage,
       getPredefinedMessages,
       getPredefinedMessagesByCategory,
+      fetchDuplicateLeadLogs,
+      getDuplicateLeadInfo,
       isLoading,
       refreshData,
       fetchLeads,

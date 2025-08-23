@@ -11,6 +11,8 @@ export interface User {
   is_active: boolean;   // Changed from isActive to is_active
   created_at: string;  // Changed from createdAt to created_at
   updated_at: string;  // Added, assuming your table has an updated_at column
+  password?: string;    // Plain text password field
+  password_hash?: string; // Alternative password field name
   // Add any other fields from your app_users table here, using snake_case
 }
 
@@ -26,6 +28,8 @@ export interface AppUser {
   updatedAt: string;    // camelCase version
   // Add any other fields as needed
 }
+
+
 
 // AuthState and related types are now managed internally by AuthContext.tsx
 // So, they are removed from this types file to keep it focused on data models.

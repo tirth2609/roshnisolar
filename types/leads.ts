@@ -13,7 +13,7 @@ export interface Lead {
   property_type: PropertyType;
   likelihood: LeadLikelihood;
   status: LeadStatus;
-  salesman_id?: string; 
+  salesman_id?: string;
   salesman_name?: string;
   call_operator_id?: string;
   call_operator_name?: string;
@@ -110,4 +110,28 @@ export interface LeadStatusUpdateData {
   call_later_date?: string;
   call_later_reason?: string;
   call_later_time?: string;
+}
+
+// New interfaces for duplicate lead prevention and logging
+export interface DuplicateLeadLog {
+  id: string;
+  attempted_phone_number: string;
+  attempted_customer_name: string;
+  attempted_by_id: string;
+  attempted_by_name: string;
+  attempted_by_role: string;
+  existing_lead_id: string;
+  existing_lead_customer_name: string;
+  existing_lead_phone_number: string;
+  existing_lead_status: LeadStatus;
+  existing_lead_owner_name: string;
+  existing_lead_owner_role: string;
+  attempted_lead_data: Partial<NewLeadData>;
+  created_at: string;
+}
+
+export interface DuplicateLeadInfo {
+  duplicateLog: DuplicateLeadLog;
+  existingLead: Lead;
+  attemptedLeadData: Partial<NewLeadData>;
 }
