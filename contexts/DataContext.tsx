@@ -117,13 +117,14 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   // Function to fetch all leads from Supabase
   const fetchLeads = async () => {
     try {
-      // Check if user is still active before fetching data
-      if (user && !user.isActive) {
-        console.log('❌ User is deactivated, cannot fetch leads');
+      // FIXED: Super admins can always fetch data, regular users need to be active
+      if (user && !user.isActive && user.role !== 'super_admin') {
+        console.log('❌ User is deactivated and not super admin, cannot fetch leads');
         return;
       }
 
       console.log('🔍 Fetching leads from Supabase with RLS security...');
+      console.log('👤 User:', user?.email, 'Role:', user?.role, 'Active:', user?.isActive);
       
       // Use direct Supabase query - RLS policies will handle security automatically
       const { data, error } = await supabase
@@ -182,13 +183,14 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   // Function to fetch customers from Supabase
   const fetchCustomers = async () => {
     try {
-      // Check if user is still active before fetching data
-      if (user && !user.isActive) {
-        console.log('❌ User is deactivated, cannot fetch customers');
+      // FIXED: Super admins can always fetch data, regular users need to be active
+      if (user && !user.isActive && user.role !== 'super_admin') {
+        console.log('❌ User is deactivated and not super admin, cannot fetch customers');
         return;
       }
 
       console.log('🔍 Fetching customers from Supabase with RLS security...');
+      console.log('👤 User:', user?.email, 'Role:', user?.role, 'Active:', user?.isActive);
       
       // Use direct Supabase query - RLS policies will handle security automatically
       const { data, error } = await supabase.from('customers').select('*').order('created_at', { ascending: false });
@@ -358,13 +360,14 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           try {
             const { data, error } = await supabase
               .from('app_users')
-              .select('is_active')
+              .select('is_active, role')
               .eq('id', user.id)
               .single();
             
-            if (error || !data || !data.is_active) {
-              // User is deactivated or not found, clear data and redirect to login
-              console.log('❌ User status check failed or user deactivated');
+            // FIXED: Super admins can always access data, regular users need to be active
+            if (error || !data || (!data.is_active && data.role !== 'super_admin')) {
+              // User is deactivated (and not super admin) or not found, clear data and redirect to login
+              console.log('❌ User status check failed or user deactivated (and not super admin)');
               setLeads([]);
               setSupportTickets([]);
               setCustomers([]);
@@ -407,8 +410,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    // Check if user is still active
-    if (!user.isActive) {
+    // FIXED: Super admins can always add leads, regular users need to be active
+    if (!user.isActive && user.role !== 'super_admin') {
       Alert.alert('Error', 'Your account has been deactivated. Please contact your administrator.');
       return;
     }
@@ -442,8 +445,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    // Check if user is still active
-    if (!user.isActive) {
+    // FIXED: Super admins can always update leads, regular users need to be active
+    if (!user.isActive && user.role !== 'super_admin') {
       Alert.alert('Error', 'Your account has been deactivated. Please contact your administrator.');
       return;
     }
@@ -704,9 +707,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   };
 
   const getLeadsByUser = (userId: string, userRole: string): Lead[] => {
-    // Check if current user is active before returning data
-    if (user && !user.isActive) {
-      console.log('❌ User is deactivated, cannot access leads');
+    // FIXED: Super admins can always access data, regular users need to be active
+    if (user && !user.isActive && user.role !== 'super_admin') {
+      console.log('❌ User is deactivated and not super admin, cannot access leads');
       return [];
     }
 

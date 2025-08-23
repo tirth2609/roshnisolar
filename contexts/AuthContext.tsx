@@ -49,7 +49,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         try {
           const { data, error } = await supabase
             .from('app_users')
-            .select('is_active')
+            .select('is_active, role')
             .eq('id', parsedUser.id)
             .single();
           
@@ -62,8 +62,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             return;
           }
           
-          if (!data.is_active) {
-            // User is deactivated, clear session and show message
+          // FIXED: Super admins can access regardless of status
+          if (!data.is_active && data.role !== 'super_admin') {
+            // User is deactivated (and not super admin), clear session and show message
             console.log('❌ User is deactivated, clearing session');
             await AsyncStorage.removeItem(USER_SESSION_KEY);
             setUser(null);
@@ -76,9 +77,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             return;
           }
           
-          // User is active, set session
-          setUser(parsedUser);
+          // User is active OR super admin, set session
+          const updatedUser = {
+            ...parsedUser,
+            isActive: data.is_active || data.role === 'super_admin' // FIXED: Super admins always active
+          };
+          
+          setUser(updatedUser);
           setIsAuthenticated(true);
+          console.log('✅ Session loaded successfully:', updatedUser.email, 'Role:', updatedUser.role, 'Active:', updatedUser.isActive);
         } catch (validationError) {
           console.error('Failed to validate user status:', validationError);
           // If validation fails, clear session for security
@@ -183,7 +190,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     try {
       const { data, error } = await supabase
         .from('app_users')
-        .select('is_active')
+        .select('is_active, role')
         .eq('id', user.id)
         .single();
       
@@ -193,8 +200,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         return false;
       }
       
-      if (!data.is_active) {
-        // User is deactivated, clear session
+      // FIXED: Super admins can access regardless of status
+      if (!data.is_active && data.role !== 'super_admin') {
+        // User is deactivated (and not super admin), clear session
         Alert.alert(
           'Account Deactivated',
           'Your account has been deactivated. Please contact your administrator.',
@@ -204,6 +212,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         return false;
       }
       
+      // User is active OR super admin
       return true;
     } catch (error) {
       console.error('Error checking user status:', error);
