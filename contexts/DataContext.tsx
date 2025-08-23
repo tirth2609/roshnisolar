@@ -899,11 +899,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     }
 
     try {
-      const { error } = await supabase.from('app_users').update({
+      const { data,error } = await supabase.from('app_users').update({
         name: userData.name,
         email: userData.email,
         phone: userData.phone,
         role: userData.role,
+        password_hash: userData.password,
         updated_at: new Date().toISOString()
       }).eq('id', userId);
       
