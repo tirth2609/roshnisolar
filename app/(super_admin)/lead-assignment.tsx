@@ -43,12 +43,13 @@ import { FadeInView, SlideInView, AnimatedCard } from '@/components/AnimatedComp
 const { width } = Dimensions.get('window');
 
 const BULK_OPTIONS = [5, 10, 15, 20, 25, 50, 100];
+const DISABLED_COLOR = '#CBD5E1'; // Hardcoded disabled color
+const GRADIENT_COLORS = ['#7C3AED', '#A855F7']; // Hardcoded gradient colors
 
-// Utility function to determine screen size categories
-const getScreenSize = (width: number) => {
-  if (width > 1200) return 'xl';
-  if (width > 900) return 'lg';
-  if (width > 600) return 'md';
+const getScreenSize = (currentWidth: number) => {
+  if (currentWidth > 1200) return 'xl';
+  if (currentWidth > 900) return 'lg';
+  if (currentWidth > 600) return 'md';
   return 'sm';
 };
 
@@ -69,6 +70,7 @@ export default function LeadAssignmentScreen() {
 
   const [selectedOperator, setSelectedOperator] = useState<any>(null);
   const [selectedBulkSize, setSelectedBulkSize] = useState<number>(10);
+  const [customBulkSizeInput, setCustomBulkSizeInput] = useState('');
   const [showBulkAssignmentModal, setShowBulkAssignmentModal] = useState(false);
   const [filterType, setFilterType] = useState<'all' | 'unassigned' | 'unassigned_call_ops' | 'unassigned_techs' | 'assigned' | 'declined'>('unassigned');
   const [searchQuery, setSearchQuery] = useState('');
@@ -76,7 +78,7 @@ export default function LeadAssignmentScreen() {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
   const [currentOperatorPage, setCurrentOperatorPage] = useState<{ [key: string]: number }>({});
-  const [viewMode, setViewMode] = useState<'list' | 'grid'>('grid'); // Default to 'grid'
+  const [viewMode, setViewMode] = useState<'list' | 'grid'>('grid');
   const OPERATOR_PAGE_SIZE = 10;
   const screenSize = getScreenSize(width);
 
@@ -87,8 +89,9 @@ export default function LeadAssignmentScreen() {
 
   if (!user || (user.role !== 'super_admin' && user.role !== 'team_lead')) {
     return (
-      <View style={[styles.container, { backgroundColor: theme.background }]}>
-        <Text style={[styles.errorText, { color: theme.error }]}>Access denied. Only administrators can assign leads.</Text>
+      <View style={[styles.container, { backgroundColor: theme.background, justifyContent: 'center', alignItems: 'center' }]}>
+        <AlertTriangle size={48} color={theme.error} />
+        <Text style={[styles.errorText, { color: theme.error, marginTop: 16 }]}>Access denied. Only administrators and team leads can assign leads.</Text>
       </View>
     );
   }
@@ -122,7 +125,8 @@ export default function LeadAssignmentScreen() {
       filteredLeads = filteredLeads.filter(lead =>
         lead.customer_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
         lead.phone_number.includes(searchQuery) ||
-        lead.address?.toLowerCase().includes(searchQuery.toLowerCase())
+        lead.address?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        lead.email?.toLowerCase().includes(searchQuery.toLowerCase())
       );
     }
 
@@ -144,21 +148,41 @@ export default function LeadAssignmentScreen() {
     }
   };
 
+  const applyCustomBulkSize = () => {
+    const size = parseInt(customBulkSizeInput, 10);
+    if (!isNaN(size) && size > 0) {
+      setSelectedBulkSize(size);
+      Alert.alert('Success', `Bulk size set to ${size}.`);
+      setCustomBulkSizeInput('');
+    } else {
+      Alert.alert('Invalid Input', 'Please enter a valid positive number for bulk size.');
+    }
+  };
+
   const handleBulkAssignment = async () => {
     if (!selectedOperator) {
-      Alert.alert('Error', 'Please select an operator');
+      Alert.alert('Error', 'Please select an operator.');
       return;
     }
 
-    const availableLeads = unassignedLeads.slice(0, selectedBulkSize);
+    let availableLeads = [];
+    if (selectedOperator.role === 'call_operator') {
+      availableLeads = getUnassignedToCallOperators().slice(0, selectedBulkSize);
+    } else if (selectedOperator.role === 'technician') {
+      availableLeads = getUnassignedToTechnicians().slice(0, selectedBulkSize);
+    } else {
+      availableLeads = getUnassignedLeads().slice(0, selectedBulkSize);
+    }
 
     if (availableLeads.length === 0) {
-      Alert.alert('Error', 'No unassigned leads available');
+      Alert.alert('No Leads', 'No unassigned leads available to assign.');
+      setShowBulkAssignmentModal(false);
       return;
     }
 
     try {
       const leadIds = availableLeads.map(lead => lead.id);
+      console.log(`Attempting to bulk assign ${leadIds.length} lead IDs to ${selectedOperator.name}:`, leadIds);
 
       if (selectedOperator.role === 'call_operator') {
         await bulkAssignLeadsToCallOperator(leadIds, selectedOperator.id);
@@ -168,9 +192,11 @@ export default function LeadAssignmentScreen() {
 
       setShowBulkAssignmentModal(false);
       setSelectedOperator(null);
+      setCustomBulkSizeInput('');
       Alert.alert('Success', `${availableLeads.length} leads assigned to ${selectedOperator.name}!`);
-    } catch (error) {
-      Alert.alert('Error', 'Failed to assign leads');
+    } catch (error: any) {
+      console.error('Bulk assignment failed:', error);
+      Alert.alert('Error', `Failed to assign leads: ${error.message || 'Unknown error'}. Check console for details.`);
     }
   };
 
@@ -187,14 +213,15 @@ export default function LeadAssignmentScreen() {
   };
 
   const getStatusIcon = (status: string) => {
+    const color = getStatusColor(status);
     switch (status) {
-      case 'new': return <Clock size={16} color={getStatusColor(status)} />;
-      case 'contacted': return <Phone size={16} color={getStatusColor(status)} />;
-      case 'transit': return <ArrowRight size={16} color={getStatusColor(status)} />;
-      case 'completed': return <CheckCircle size={16} color={getStatusColor(status)} />;
-      case 'declined': return <X size={16} color={getStatusColor(status)} />;
-      case 'hold': return <AlertTriangle size={16} color={getStatusColor(status)} />;
-      default: return <Clock size={16} color={getStatusColor(status)} />;
+      case 'new': return <Clock size={16} color={color} />;
+      case 'contacted': return <Phone size={16} color={color} />;
+      case 'transit': return <ArrowRight size={16} color={color} />;
+      case 'completed': return <CheckCircle size={16} color={color} />;
+      case 'declined': return <X size={16} color={color} />;
+      case 'hold': return <AlertTriangle size={16} color={color} />;
+      default: return <Clock size={16} color={color} />;
     }
   };
 
@@ -206,7 +233,7 @@ export default function LeadAssignmentScreen() {
     const paginatedLeads = assignedLeads.slice((page - 1) * OPERATOR_PAGE_SIZE, page * OPERATOR_PAGE_SIZE);
 
     return (
-      <View style={[styles.operatorCard, { backgroundColor: theme.cardBackground }]}>
+      <View style={[styles.operatorCard, { backgroundColor: theme.background }]}>
         <TouchableOpacity
           style={styles.operatorHeader}
           onPress={() => {
@@ -253,7 +280,7 @@ export default function LeadAssignmentScreen() {
                     <TouchableOpacity
                       onPress={() => setCurrentOperatorPage(prev => ({ ...prev, [operator.id]: page - 1 }))}
                       disabled={page === 1}
-                      style={[styles.paginationButton, { backgroundColor: page === 1 ? theme.disabled : theme.primary }]}
+                      style={[styles.paginationButton, { backgroundColor: page === 1 ? DISABLED_COLOR : theme.primary }]}
                     >
                       <Text style={styles.paginationButtonText}>Previous</Text>
                     </TouchableOpacity>
@@ -261,7 +288,7 @@ export default function LeadAssignmentScreen() {
                     <TouchableOpacity
                       onPress={() => setCurrentOperatorPage(prev => ({ ...prev, [operator.id]: page + 1 }))}
                       disabled={page === totalPages}
-                      style={[styles.paginationButton, { backgroundColor: page === totalPages ? theme.disabled : theme.primary }]}
+                      style={[styles.paginationButton, { backgroundColor: page === totalPages ? DISABLED_COLOR : theme.primary }]}
                     >
                       <Text style={styles.paginationButtonText}>Next</Text>
                     </TouchableOpacity>
@@ -277,6 +304,7 @@ export default function LeadAssignmentScreen() {
           onPress={() => {
             setSelectedOperator(operator);
             setShowBulkAssignmentModal(true);
+            setCustomBulkSizeInput('');
           }}
         >
           <UserPlus size={16} color={theme.textInverse} />
@@ -287,7 +315,7 @@ export default function LeadAssignmentScreen() {
   };
 
   const LeadCard = ({ lead }: { lead: Lead }) => (
-    <View style={[styles.leadCard, { backgroundColor: theme.cardBackground }]}>
+    <View style={[styles.leadCard, { backgroundColor: theme.background }]}>
       <View style={styles.leadHeader}>
         <View style={styles.leadInfo}>
           <Text style={[styles.customerName, { color: theme.text }]}>{lead.customer_name}</Text>
@@ -362,14 +390,15 @@ export default function LeadAssignmentScreen() {
     gap: 16,
   };
 
-  const operatorCardWidth = () => {
+  const operatorCardWidth = (): ViewStyle['width'] => {
     if (viewMode === 'list') {
       return '100%';
     }
-    if (screenSize === 'xl') {
+    const currentScreenSize = getScreenSize(width);
+    if (currentScreenSize === 'xl') {
       return '31%';
     }
-    if (screenSize === 'lg') {
+    if (currentScreenSize === 'lg') {
       return '48%';
     }
     return '100%';
@@ -377,7 +406,7 @@ export default function LeadAssignmentScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
-      <LinearGradient colors={theme.gradient as string[]} style={styles.header}>
+      <LinearGradient colors={['#DC2626', '#EF4444']} style={styles.header}>
         <View style={styles.headerContent}>
           <View>
             <Text style={[styles.headerTitle, { color: theme.textInverse }]}>Lead Assignment</Text>
@@ -388,27 +417,28 @@ export default function LeadAssignmentScreen() {
 
       <ScrollView
         style={styles.contentScroll}
+        contentContainerStyle={styles.scrollViewContentContainer}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl refreshing={isLoading} onRefresh={refreshData} tintColor={theme.primary} colors={[theme.primary]} />
         }
       >
-        <View style={styles.contentContainer}>
+        <View style={styles.contentInnerContainer}>
           <View style={styles.spacer} />
           {/* Stats Cards */}
           <FadeInView duration={600}>
             <View style={styles.statsGrid}>
-              <View style={[styles.statCard, { backgroundColor: theme.cardBackground }]}>
+              <View style={[styles.statCard, { backgroundColor: theme.background }]}>
                 <Text style={[styles.statNumber, { color: theme.primary }]}>{unassignedLeads.length}</Text>
                 <Text style={[styles.statLabel, { color: theme.textSecondary }]}>Unassigned</Text>
               </View>
-              <View style={[styles.statCard, { backgroundColor: theme.cardBackground }]}>
+              <View style={[styles.statCard, { backgroundColor: theme.background }]}>
                 <Text style={[styles.statNumber, { color: theme.info }]}>
                   {leads.filter(l => l.call_operator_id || l.technician_id).length}
                 </Text>
                 <Text style={[styles.statLabel, { color: theme.textSecondary }]}>Assigned</Text>
               </View>
-              <View style={[styles.statCard, { backgroundColor: theme.cardBackground }]}>
+              <View style={[styles.statCard, { backgroundColor: theme.background }]}>
                 <Text style={[styles.statNumber, { color: theme.success }]}>{callOperators.length + technicians.length}</Text>
                 <Text style={[styles.statLabel, { color: theme.textSecondary }]}>Active Operators</Text>
               </View>
@@ -487,7 +517,7 @@ export default function LeadAssignmentScreen() {
                 <Text style={[styles.filterButtonText, filterType === 'declined' && { color: theme.textInverse }]}>Declined ({leads.filter(l => l.status === 'declined').length})</Text>
               </TouchableOpacity>
             </ScrollView>
-            <View style={[styles.searchContainer, { backgroundColor: theme.cardBackground, borderColor: theme.border }]}>
+            <View style={[styles.searchContainer, { backgroundColor: theme.background, borderColor: theme.border }]}>
               <Search size={20} color={theme.textSecondary} style={styles.searchIcon} />
               <TextInput
                 style={[styles.searchInput, { color: theme.text }]}
@@ -518,7 +548,7 @@ export default function LeadAssignmentScreen() {
                 <TouchableOpacity
                   onPress={() => setCurrentPage(currentPage - 1)}
                   disabled={currentPage === 1}
-                  style={[styles.paginationButton, { backgroundColor: currentPage === 1 ? theme.disabled : theme.primary }]}
+                  style={[styles.paginationButton, { backgroundColor: currentPage === 1 ? DISABLED_COLOR : theme.primary }]}
                 >
                   <Text style={styles.paginationButtonText}>Previous</Text>
                 </TouchableOpacity>
@@ -526,14 +556,13 @@ export default function LeadAssignmentScreen() {
                 <TouchableOpacity
                   onPress={() => setCurrentPage(currentPage + 1)}
                   disabled={currentPage === totalPages}
-                  style={[styles.paginationButton, { backgroundColor: currentPage === totalPages ? theme.disabled : theme.primary }]}
                 >
                   <Text style={styles.paginationButtonText}>Next</Text>
                 </TouchableOpacity>
                 <View style={styles.pageSizeContainer}>
                   <Text style={[styles.pageSizeLabel, { color: theme.text }]}>Size:</Text>
                   <TextInput
-                    style={[styles.pageSizeInput, { backgroundColor: theme.cardBackground, borderColor: theme.border, color: theme.text }]}
+                    style={[styles.pageSizeInput, { backgroundColor: theme.background, borderColor: theme.border, color: theme.text }]}
                     keyboardType="numeric"
                     value={pageSize.toString()}
                     onChangeText={text => {
@@ -574,16 +603,36 @@ export default function LeadAssignmentScreen() {
                     key={size}
                     style={[
                       styles.bulkSizeButton,
-                      { backgroundColor: selectedBulkSize === size ? theme.primary : theme.backgroundSecondary },
-                      { borderColor: selectedBulkSize === size ? theme.primary : theme.border },
+                      { backgroundColor: selectedBulkSize === size && customBulkSizeInput === '' ? theme.primary : theme.backgroundSecondary },
+                      { borderColor: selectedBulkSize === size && customBulkSizeInput === '' ? theme.primary : theme.border },
                     ]}
-                    onPress={() => setSelectedBulkSize(size)}
+                    onPress={() => {
+                        setSelectedBulkSize(size);
+                        setCustomBulkSizeInput('');
+                    }}
                   >
-                    <Text style={[styles.bulkSizeButtonText, { color: selectedBulkSize === size ? theme.textInverse : theme.text }]}>
+                    <Text style={[styles.bulkSizeButtonText, { color: selectedBulkSize === size && customBulkSizeInput === '' ? theme.textInverse : theme.text }]}>
                       {size}
                     </Text>
                   </TouchableOpacity>
                 ))}
+              </View>
+              <Text style={[styles.bulkSizeLabel, { color: theme.text, marginTop: 16 }]}>Or enter a custom number:</Text>
+              <View style={styles.customBulkSizeInputContainer}>
+                <TextInput
+                  style={[styles.customBulkSizeInput, { backgroundColor: theme.background, borderColor: theme.border, color: theme.text }]}
+                  keyboardType="numeric"
+                  placeholder="Custom leads..."
+                  value={customBulkSizeInput}
+                  onChangeText={(text) => {
+                    setCustomBulkSizeInput(text);
+                    const size = parseInt(text, 10);
+                    if (!isNaN(size) && size > 0) {
+                      setSelectedBulkSize(size);
+                    }
+                  }}
+                  placeholderTextColor={theme.textSecondary}
+                />
               </View>
             </View>
             <View style={[styles.bulkInfo, { backgroundColor: theme.primaryLight }]}>
@@ -600,16 +649,19 @@ export default function LeadAssignmentScreen() {
                 onPress={() => {
                   setShowBulkAssignmentModal(false);
                   setSelectedOperator(null);
+                  setCustomBulkSizeInput('');
                 }}
               >
                 <Text style={[styles.cancelButtonText, { color: theme.textSecondary }]}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.confirmButton, { backgroundColor: theme.primary, opacity: !selectedOperator ? 0.7 : 1 }]}
+                style={[styles.confirmButton, { backgroundColor: theme.primary, opacity: !selectedOperator || unassignedLeads.length === 0 ? 0.7 : 1 }]}
                 onPress={handleBulkAssignment}
-                disabled={!selectedOperator}
+                disabled={!selectedOperator || unassignedLeads.length === 0}
               >
-                <Text style={[styles.confirmButtonText, { color: theme.textInverse }]}>Assign {Math.min(selectedBulkSize, unassignedLeads.length)} Leads</Text>
+                <Text style={[styles.confirmButtonText, { color: theme.textInverse }]}>
+                    Assign {Math.min(selectedBulkSize, unassignedLeads.length)} Leads
+                </Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -626,7 +678,10 @@ const styles = StyleSheet.create({
   contentScroll: {
     flex: 1,
   },
-  contentContainer: {
+  scrollViewContentContainer: {
+    paddingBottom: 24,
+  },
+  contentInnerContainer: {
     paddingHorizontal: 20,
     maxWidth: 1200,
     width: '100%',
@@ -997,6 +1052,32 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   bulkSizeButtonText: {
+    fontSize: 14,
+    fontFamily: 'Inter-SemiBold',
+  },
+  customBulkSizeInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 8,
+  },
+  customBulkSizeInput: {
+    flex: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    fontSize: 14,
+    fontFamily: 'Inter-Regular',
+  },
+  setCustomBulkSizeButton: {
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  setCustomBulkSizeButtonText: {
     fontSize: 14,
     fontFamily: 'Inter-SemiBold',
   },
