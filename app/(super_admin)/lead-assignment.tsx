@@ -8,10 +8,8 @@ import {
   RefreshControl,
   Modal,
   Alert,
-  ActivityIndicator,
   Dimensions,
   TextInput,
-  Platform,
   ViewStyle,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -38,13 +36,13 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { Lead } from '@/types/leads';
 import SkeletonLeadList from '../components/SkeletonLeadList';
-import { FadeInView, SlideInView, AnimatedCard } from '@/components/AnimatedComponents';
+import { FadeInView, SlideInView } from '@/components/AnimatedComponents';
 
 const { width } = Dimensions.get('window');
 
 const BULK_OPTIONS = [5, 10, 15, 20, 25, 50, 100];
-const DISABLED_COLOR = '#CBD5E1'; // Hardcoded disabled color
-const GRADIENT_COLORS = ['#7C3AED', '#A855F7']; // Hardcoded gradient colors
+const DISABLED_COLOR = '#CBD5E1';
+const GRADIENT_COLORS = ['#DC2626', '#EF4444'];
 
 const getScreenSize = (currentWidth: number) => {
   if (currentWidth > 1200) return 'xl';
@@ -64,7 +62,7 @@ export default function LeadAssignmentScreen() {
     getUnassignedToCallOperators,
     getUnassignedToTechnicians,
     isLoading,
-    refreshData
+    refreshData,
   } = useData();
   const { theme } = useTheme();
 
@@ -404,9 +402,21 @@ export default function LeadAssignmentScreen() {
     return '100%';
   };
 
+  const leadsToAssignCount = selectedOperator?.role === 'call_operator'
+    ? Math.min(selectedBulkSize, unassignedToCallOps.length)
+    : selectedOperator?.role === 'technician'
+      ? Math.min(selectedBulkSize, unassignedToTechs.length)
+      : 0;
+
+  const totalUnassignedLeads = selectedOperator?.role === 'call_operator'
+    ? unassignedToCallOps.length
+    : selectedOperator?.role === 'technician'
+      ? unassignedToTechs.length
+      : 0;
+
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
-      <LinearGradient colors={['#DC2626', '#EF4444']} style={styles.header}>
+      <LinearGradient colors={GRADIENT_COLORS} style={styles.header}>
         <View style={styles.headerContent}>
           <View>
             <Text style={[styles.headerTitle, { color: theme.textInverse }]}>Lead Assignment</Text>
@@ -556,6 +566,7 @@ export default function LeadAssignmentScreen() {
                 <TouchableOpacity
                   onPress={() => setCurrentPage(currentPage + 1)}
                   disabled={currentPage === totalPages}
+                  style={[styles.paginationButton, { backgroundColor: currentPage === totalPages ? DISABLED_COLOR : theme.primary }]}
                 >
                   <Text style={styles.paginationButtonText}>Next</Text>
                 </TouchableOpacity>
@@ -607,8 +618,8 @@ export default function LeadAssignmentScreen() {
                       { borderColor: selectedBulkSize === size && customBulkSizeInput === '' ? theme.primary : theme.border },
                     ]}
                     onPress={() => {
-                        setSelectedBulkSize(size);
-                        setCustomBulkSizeInput('');
+                      setSelectedBulkSize(size);
+                      setCustomBulkSizeInput('');
                     }}
                   >
                     <Text style={[styles.bulkSizeButtonText, { color: selectedBulkSize === size && customBulkSizeInput === '' ? theme.textInverse : theme.text }]}>
@@ -637,10 +648,10 @@ export default function LeadAssignmentScreen() {
             </View>
             <View style={[styles.bulkInfo, { backgroundColor: theme.primaryLight }]}>
               <Text style={[styles.bulkInfoText, { color: theme.primary }]}>
-                Will assign {Math.min(selectedBulkSize, unassignedLeads.length)} unassigned leads to {selectedOperator?.name}
+                Will assign {leadsToAssignCount} unassigned leads to {selectedOperator?.name}
               </Text>
               <Text style={[styles.bulkInfoSubtext, { color: theme.primary }]}>
-                Available unassigned leads: {unassignedLeads.length}
+                Available unassigned leads for this role: {totalUnassignedLeads}
               </Text>
             </View>
             <View style={styles.modalActions}>
@@ -655,12 +666,12 @@ export default function LeadAssignmentScreen() {
                 <Text style={[styles.cancelButtonText, { color: theme.textSecondary }]}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.confirmButton, { backgroundColor: theme.primary, opacity: !selectedOperator || unassignedLeads.length === 0 ? 0.7 : 1 }]}
+                style={[styles.confirmButton, { backgroundColor: theme.primary, opacity: !selectedOperator || leadsToAssignCount === 0 ? 0.7 : 1 }]}
                 onPress={handleBulkAssignment}
-                disabled={!selectedOperator || unassignedLeads.length === 0}
+                disabled={!selectedOperator || leadsToAssignCount === 0}
               >
                 <Text style={[styles.confirmButtonText, { color: theme.textInverse }]}>
-                    Assign {Math.min(selectedBulkSize, unassignedLeads.length)} Leads
+                  Assign {leadsToAssignCount} Leads
                 </Text>
               </TouchableOpacity>
             </View>
