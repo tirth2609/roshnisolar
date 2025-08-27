@@ -1,11 +1,12 @@
 // contexts/DataContext.tsx
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { Alert } from 'react-native';
-import { Lead, NewLeadData, LeadStatus, RescheduleData, ScheduleCallData, CallLaterLog, CallLaterData, LeadStatusUpdateData } from '@/types/leads';
+import { Lead, NewLeadData, LeadStatus, RescheduleData, ScheduleCallData, CallLaterLog, CallLaterData, LeadStatusUpdateData, DuplicateLeadLog, DuplicateLeadInfo } from '@/types/leads';
 import { SupportTicket, NewTicketData, TicketStatus } from '@/types/support';
 import { Customer, NewCustomerData, CustomerConversionData, ProjectStatus } from '@/types/customers';
 import { CallLog } from '@/types/logs';
 import { PredefinedMessage, CreateMessageData, UpdateMessageData } from '@/types/messages';
+
 import { useAuth } from './AuthContext';
 import { supabase } from '../lib/supabase';
 import { NotificationService } from '../lib/notifications';
@@ -29,6 +30,7 @@ interface DataContextType {
   callLaterLogs: CallLaterLog[];
   callLogs: CallLog[];
   predefinedMessages: PredefinedMessage[];
+  duplicateLeadLogs: DuplicateLeadLog[];
   addLead: (leadData: NewLeadData) => Promise<void>;
   updateLeadStatus: (leadId: string, status: LeadStatus, notes?: string) => Promise<void>;
   updateLeadStatusWithCallLater: (data: LeadStatusUpdateData) => Promise<void>;
@@ -55,6 +57,7 @@ interface DataContextType {
   getUserLeads: (userId: string) => Lead[];
   getUserTickets: (userId: string) => SupportTicket[];
   getAllUsers: () => AppUserFromDB[];
+  getActiveUsers: () => AppUserFromDB[];
   getTechnicians: () => AppUserFromDB[];
   getCallOperators: () => AppUserFromDB[];
   getTeamLeads: () => AppUserFromDB[];
@@ -63,7 +66,7 @@ interface DataContextType {
   getUserWorkStats: (userId: string) => any;
   addUser: (userData: any) => Promise<void>;
   updateUser: (userId: string, userData: any) => Promise<void>;
-  deleteUser: (userId: string) => Promise<void>;
+  deleteUser: (userId: string, reassignToUserId?: string) => Promise<void>;
   toggleUserStatus: (userId: string, currentStatus: boolean) => Promise<void>;
   bulkImportLeads: (leadsData: NewLeadData[]) => Promise<void>;
   getAnalytics: () => any;
@@ -84,6 +87,10 @@ interface DataContextType {
   deletePredefinedMessage: (messageId: string) => Promise<void>;
   getPredefinedMessages: () => PredefinedMessage[];
   getPredefinedMessagesByCategory: (category: string) => PredefinedMessage[];
+  // Duplicate Lead Logs functions
+  fetchDuplicateLeadLogs: () => Promise<void>;
+  getDuplicateLeadInfo: (logId: string) => DuplicateLeadInfo | null;
+
   isLoading: boolean;
   refreshData: () => Promise<void>;
   fetchLeads: () => Promise<void>;
@@ -103,25 +110,35 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [callLaterLogs, setCallLaterLogs] = useState<CallLaterLog[]>([]);
   const [callLogs, setCallLogs] = useState<CallLog[]>([]);
   const [predefinedMessages, setPredefinedMessages] = useState<PredefinedMessage[]>([]);
+  const [duplicateLeadLogs, setDuplicateLeadLogs] = useState<DuplicateLeadLog[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const { user, isAuthenticated } = useAuth();
+  const { user, isAuthenticated, signOut } = useAuth();
 
   // Function to fetch all leads from Supabase
   const fetchLeads = async () => {
     try {
-      console.log('🔍 Fetching ALL leads from Supabase...');
-      const { data, error, count } = await supabase
+      // FIXED: Super admins can always fetch data, regular users need to be active
+      if (user && !user.isActive && user.role !== 'super_admin') {
+        console.log('❌ User is deactivated and not super admin, cannot fetch leads');
+        return;
+      }
+
+      console.log('🔍 Fetching leads from Supabase with RLS security...');
+      console.log('👤 User:', user?.email, 'Role:', user?.role, 'Active:', user?.isActive);
+      
+      // Use direct Supabase query - RLS policies will handle security automatically
+      const { data, error } = await supabase
         .from('leads')
-        .select('*', { count: 'exact' })
-        .order('created_at', { ascending: false })
-        .range(0, 10000); // fetch up to 100,000 leads
+        .select('*')
+        .order('created_at', { ascending: false });
 
       if (error) {
         console.error('❌ Error fetching leads:', error);
         throw error;
       }
 
-      console.log('✅ Leads fetched successfully:', data?.length || 0, 'leads found');
+      console.log('✅ Leads fetched successfully with RLS security:', data?.length || 0, 'leads found');
+      
       // Map snake_case fields to match the updated Lead interface
       const mappedLeads = (data || []).map((lead: any) => ({
         id: lead.id,
@@ -166,8 +183,20 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   // Function to fetch customers from Supabase
   const fetchCustomers = async () => {
     try {
+      // FIXED: Super admins can always fetch data, regular users need to be active
+      if (user && !user.isActive && user.role !== 'super_admin') {
+        console.log('❌ User is deactivated and not super admin, cannot fetch customers');
+        return;
+      }
+
+      console.log('🔍 Fetching customers from Supabase with RLS security...');
+      console.log('👤 User:', user?.email, 'Role:', user?.role, 'Active:', user?.isActive);
+      
+      // Use direct Supabase query - RLS policies will handle security automatically
       const { data, error } = await supabase.from('customers').select('*').order('created_at', { ascending: false });
       if (error) throw error;
+      
+      console.log('✅ Customers fetched successfully with RLS security:', data?.length || 0, 'customers found');
       
       // Map snake_case fields to camelCase
       const mappedCustomers = (data || []).map((customer: any) => ({
@@ -263,6 +292,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+
+
   const fetchCallLogs = async () => {
     try {
       const { data, error } = await supabase
@@ -303,8 +334,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+
+
   useEffect(() => {
-    if (isAuthenticated) {
+    if (isAuthenticated && user) {
       const loadData = async () => {
         setIsLoading(true);
         await Promise.all([
@@ -313,27 +346,73 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           fetchSupportTickets(), 
           fetchCustomers(),
           fetchCallLaterLogs(),
+          fetchDuplicateLeadLogs(), // Added fetchDuplicateLeadLogs
           fetchCallLogs(),
-          fetchPredefinedMessages(),
+          fetchPredefinedMessages(),// Added fetchTeamLeadAssignments
         ]);
         setIsLoading(false);
       };
       loadData();
+      
+      // Set up periodic user status check every 5 minutes
+      const statusCheckInterval = setInterval(async () => {
+        if (user) {
+          try {
+            const { data, error } = await supabase
+              .from('app_users')
+              .select('is_active, role')
+              .eq('id', user.id)
+              .single();
+            
+            // FIXED: Super admins can always access data, regular users need to be active
+            if (error || !data || (!data.is_active && data.role !== 'super_admin')) {
+              // User is deactivated (and not super admin) or not found, clear data and redirect to login
+              console.log('❌ User status check failed or user deactivated (and not super admin)');
+              setLeads([]);
+              setSupportTickets([]);
+              setCustomers([]);
+              setAppUsers([]);
+              setCallLaterLogs([]);
+              setDuplicateLeadLogs([]);
+              setCallLogs([]);
+              setPredefinedMessages([]);
+              
+              // Show alert and redirect to login
+              Alert.alert(
+                'Account Deactivated',
+                'Your account has been deactivated. You will be redirected to login.',
+                [{ text: 'OK' }]
+              );
+            }
+          } catch (error) {
+            console.error('Error checking user status:', error);
+          }
+        }
+      }, 5 * 60 * 1000); // Check every 5 minutes
+      
+      return () => clearInterval(statusCheckInterval);
     } else {
       setLeads([]);
       setSupportTickets([]);
       setCustomers([]);
       setAppUsers([]);
       setCallLaterLogs([]);
+      setDuplicateLeadLogs([]); // Added setDuplicateLeadLogs
       setCallLogs([]);
       setPredefinedMessages([]);
       setIsLoading(false);
     }
-  }, [isAuthenticated]);
+  }, [isAuthenticated, user]);
 
   const addLead = async (leadData: NewLeadData): Promise<void> => {
     if (!user) {
       Alert.alert('Error', 'User not authenticated.');
+      return;
+    }
+
+    // FIXED: Super admins can always add leads, regular users need to be active
+    if (!user.isActive && user.role !== 'super_admin') {
+      Alert.alert('Error', 'Your account has been deactivated. Please contact your administrator.');
       return;
     }
 
@@ -363,6 +442,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const updateLeadStatus = async (leadId: string, status: LeadStatus, notes?: string): Promise<void> => {
     if (!user) {
       Alert.alert('Error', 'User not authenticated.');
+      return;
+    }
+
+    // FIXED: Super admins can always update leads, regular users need to be active
+    if (!user.isActive && user.role !== 'super_admin') {
+      Alert.alert('Error', 'Your account has been deactivated. Please contact your administrator.');
       return;
     }
     
@@ -528,7 +613,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       const { error } = await supabase.from('leads').update({
         call_operator_id: callOperatorId,
         call_operator_name: callOperator.name,
-        status: 'new',
         updated_at: new Date().toISOString()
       }).eq('id', leadId);
       
@@ -578,7 +662,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         case 'call_operator':
           updateData.call_operator_id = newUserId;
           updateData.call_operator_name = newUser.name;
-          updateData.status = 'new';
+          updateData.status = 'contacted';
           break;
         case 'technician':
           updateData.technician_id = newUserId;
@@ -623,6 +707,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   };
 
   const getLeadsByUser = (userId: string, userRole: string): Lead[] => {
+    // FIXED: Super admins can always access data, regular users need to be active
+    if (user && !user.isActive && user.role !== 'super_admin') {
+      console.log('❌ User is deactivated and not super admin, cannot access leads');
+      return [];
+    }
+
     switch (userRole) {
       case 'salesman':
         return leads.filter(lead => lead.salesman_id === userId);
@@ -861,9 +951,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   };
 
   const getAllUsers = () => appUsers;
+  const getActiveUsers = () => appUsers.filter(u => u.is_active);
   const getTechnicians = () => appUsers.filter(u => u.role === 'technician' && u.is_active);
   const getCallOperators = () => appUsers.filter(u => u.role === 'call_operator' );
-  const getSalesmen = () => appUsers.filter(u => u.role === 'salesman' );
+  const getSalesmen = () => appUsers.filter(u => u.role === 'salesman' && u.is_active);
 
   const addUser = async (userData: any): Promise<void> => {
     if (!user) {
@@ -899,11 +990,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     }
 
     try {
-      const { error } = await supabase.from('app_users').update({
+      const { data,error } = await supabase.from('app_users').update({
         name: userData.name,
         email: userData.email,
         phone: userData.phone,
         role: userData.role,
+        password_hash: userData.password,
         updated_at: new Date().toISOString()
       }).eq('id', userId);
       
@@ -916,7 +1008,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const deleteUser = async (userId: string): Promise<void> => {
+  const deleteUser = async (userId: string, reassignToUserId?: string): Promise<void> => {
     if (!user) {
       Alert.alert('Error', 'User not authenticated.');
       return;
@@ -928,11 +1020,21 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         throw new Error('You cannot delete your own account');
       }
 
-      const { error } = await supabase.from('app_users').delete().eq('id', userId);
+      // Use the Edge Function for proper deletion with reassignment
+      const { data, error } = await supabase.functions.invoke('deleteUser', {
+        body: { userId, reassignToUserId }
+      });
+
       if (error) throw error;
       
-      // Refresh users list
-      await fetchAppUsers();
+      if (data.success) {
+        // Refresh users list
+        await fetchAppUsers();
+        // Refresh leads to get updated assignments
+        await fetchLeads();
+      } else {
+        throw new Error(data.error || 'Failed to delete user');
+      }
     } catch (error: any) {
       console.error('Error deleting user:', error.message);
       Alert.alert('Error', `Failed to delete user: ${error.message}`);
@@ -1000,8 +1102,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       fetchSupportTickets(), 
       fetchCustomers(),
       fetchCallLaterLogs(),
+      fetchDuplicateLeadLogs(), // Added fetchDuplicateLeadLogs
       fetchCallLogs(),
-      fetchPredefinedMessages(),
+      fetchPredefinedMessages()
     ]);
     setIsLoading(false);
   };
@@ -1018,7 +1121,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       const { error } = await supabase.from('leads').update({
         call_operator_id: callOperatorId,
         call_operator_name: callOperator.name,
-        status: 'new',
         updated_at: new Date().toISOString()
       }).in('id', leadIds);
       
@@ -1550,6 +1652,53 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     return predefinedMessages.filter(message => message.category === category);
   };
 
+  // Implement fetchDuplicateLeadLogs
+  const fetchDuplicateLeadLogs = async (): Promise<void> => {
+    try {
+      const { data, error } = await supabase
+        .from('duplicate_lead_logs')
+        .select('*')
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      const mappedLogs: DuplicateLeadLog[] = (data || []).map((log: any) => ({
+        id: log.id,
+        attempted_phone_number: log.attempted_phone_number,
+        attempted_customer_name: log.attempted_customer_name,
+        attempted_by_id: log.attempted_by_id,
+        attempted_by_name: log.attempted_by_name,
+        attempted_by_role: log.attempted_by_role,
+        existing_lead_id: log.existing_lead_id,
+        existing_lead_customer_name: log.existing_lead_customer_name,
+        existing_lead_phone_number: log.existing_lead_phone_number,
+        existing_lead_status: log.existing_lead_status,
+        existing_lead_owner_name: log.existing_lead_owner_name,
+        existing_lead_owner_role: log.existing_lead_owner_role,
+        attempted_lead_data: log.attempted_lead_data,
+        created_at: log.created_at,
+      }));
+      setDuplicateLeadLogs(mappedLogs);
+    } catch (error: any) {
+      console.error('Error fetching duplicate lead logs:', error.message);
+    }
+  };
+
+  // Implement getDuplicateLeadInfo
+  const getDuplicateLeadInfo = (logId: string): DuplicateLeadInfo | null => {
+    const log = duplicateLeadLogs.find(l => l.id === logId);
+    if (!log) return null;
+
+    const existingLead = leads.find(l => l.id === log.existing_lead_id);
+
+    if (!existingLead) return null;
+
+    return {
+      duplicateLog: log,
+      existingLead: existingLead,
+      attemptedLeadData: log.attempted_lead_data,
+    };
+  };
+
+ 
   return (
     <DataContext.Provider value={{
       leads,
@@ -1558,6 +1707,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       callLaterLogs,
       callLogs,
       predefinedMessages,
+      duplicateLeadLogs,
       addLead,
       updateLeadStatus,
       updateLeadStatusWithCallLater,
@@ -1584,6 +1734,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       getUserLeads,
       getUserTickets,
       getAllUsers,
+      getActiveUsers,
       getTechnicians,
       getCallOperators,
       getTeamLeads,
@@ -1612,6 +1763,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       deletePredefinedMessage,
       getPredefinedMessages,
       getPredefinedMessagesByCategory,
+      fetchDuplicateLeadLogs,
+      getDuplicateLeadInfo,
       isLoading,
       refreshData,
       fetchLeads,
