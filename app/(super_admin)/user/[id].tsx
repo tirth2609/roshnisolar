@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert, Platform } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert, Platform, Dimensions } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import {
@@ -16,6 +16,8 @@ import {
 } from 'lucide-react-native';
 import { useData } from '@/contexts/DataContext';
 import { UserRole } from '@/types/auth';
+
+const { width } = Dimensions.get('window');
 
 const roleColors = {
   salesman: { bg: '#FEF3C7', text: '#92400E', border: '#F59E0B' },
@@ -64,7 +66,7 @@ function getWorkLabel(role: UserRole) {
 export default function UserDetailsScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { getAllUsers, getUserLeads, getUserWorkStats, getCallLogs, getCallLaterLogsByOperator } = useData();
+  const { getAllUsers, getUserLeads, getCallLogs, getCallLaterLogsByOperator } = useData();
 
   const users = getAllUsers();
   const user = useMemo(() => users.find((u: any) => u && u.id != null && String(u.id) === String(id)), [users, id]);
@@ -76,7 +78,8 @@ export default function UserDetailsScreen() {
 
   const [startDateInput, setStartDateInput] = useState(`${yyyy}-${mm}-${dd}`);
   const [endDateInput, setEndDateInput] = useState(`${yyyy}-${mm}-${dd}`);
-  const [filteredLeads, setFilteredLeads] = useState<any[]>([]);
+  const [filteredData, setFilteredData] = useState<any[]>([]);
+  const [searchType, setSearchType] = useState<'leads' | 'logs'>('leads');
   const [selectedStatus, setSelectedStatus] = useState<string>('All');
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 5;
@@ -104,13 +107,24 @@ export default function UserDetailsScreen() {
       return;
     }
 
-    const userLeads = getUserLeads(user.id);
-    const leads = userLeads.filter((lead: any) => {
-      const leadDate = new Date(lead.created_at);
-      return leadDate >= start && leadDate <= end;
-    });
+    let data;
+    if (searchType === 'leads') {
+      const userLeads = getUserLeads(user.id);
+      data = userLeads.filter((lead: any) => {
+        const leadDate = new Date(lead.created_at);
+        return leadDate >= start && leadDate <= end;
+      });
+    } else {
+      const callLogs = getCallLogs(user.id);
+      const callLaterLogs = getCallLaterLogsByOperator(user.id);
+      const logs = [...callLogs, ...callLaterLogs];
+      data = logs.filter((log: any) => {
+        const logDate = new Date(log.created_at || log.createdAt);
+        return logDate >= start && logDate <= end;
+      });
+    }
 
-    setFilteredLeads(leads);
+    setFilteredData(data);
     setCurrentPage(1); // Reset to first page on new search
   };
 
@@ -119,15 +133,16 @@ export default function UserDetailsScreen() {
     setCurrentPage(1); // Reset to first page on new filter
   };
 
-  const finalFilteredLeads = useMemo(() => {
+  const finalFilteredData = useMemo(() => {
+    if (searchType !== 'leads') return filteredData;
     if (selectedStatus === 'All') {
-      return filteredLeads;
+      return filteredData;
     }
-    return filteredLeads.filter((lead) => lead.status === selectedStatus);
-  }, [filteredLeads, selectedStatus]);
+    return filteredData.filter((lead) => lead.status === selectedStatus);
+  }, [filteredData, selectedStatus, searchType]);
 
-  const totalPages = Math.ceil(finalFilteredLeads.length / pageSize);
-  const paginatedLeads = finalFilteredLeads.slice(
+  const totalPages = Math.ceil(finalFilteredData.length / pageSize);
+  const paginatedData = finalFilteredData.slice(
     (currentPage - 1) * pageSize,
     currentPage * pageSize
   );
@@ -167,14 +182,14 @@ export default function UserDetailsScreen() {
         };
       }
       case 'call_operator': {
-        const allCallLogs = getCallLogs();
-        const operatorCalls = (allCallLogs || []).filter((log: any) => String(log.user_id) === String(user.id));
+        const allCallLogs = getCallLogs(user.id);
+        const operatorCalls = allCallLogs.filter((log: any) => String(log.caller_id) === String(user.id));
         const callsInRange = operatorCalls.filter((log: any) => {
           const d = new Date(log.created_at);
           return d >= start && d <= end;
         });
 
-        const operatorCallLater = getCallLaterLogsByOperator(String(user.id)) || [];
+        const operatorCallLater = getCallLaterLogsByOperator(user.id);
         const callLaterInRange = operatorCallLater.filter((log: any) => {
           const d = new Date(log.createdAt);
           return d >= start && d <= end;
@@ -238,7 +253,7 @@ export default function UserDetailsScreen() {
           periodConversionRate: '0',
         };
     }
-  }, [user, startDateInput, endDateInput, getUserLeads, getUserWorkStats, getCallLogs, getCallLaterLogsByOperator]);
+  }, [user, startDateInput, endDateInput, getUserLeads, getCallLogs, getCallLaterLogsByOperator]);
 
   // Helpers for standard period windows and aggregation
   const getDateRange = (period: 'daily' | 'weekly' | 'monthly') => {
@@ -249,11 +264,12 @@ export default function UserDetailsScreen() {
         start.setHours(0, 0, 0, 0);
         break;
       case 'weekly':
-        start.setDate(now.getDate() - 7);
+        start.setDate(now.getDate() - 6); // To get a full week, including today
         start.setHours(0, 0, 0, 0);
         break;
       case 'monthly':
-        start.setMonth(now.getMonth() - 1);
+        start.setMonth(now.getMonth());
+        start.setDate(1);
         start.setHours(0, 0, 0, 0);
         break;
     }
@@ -287,14 +303,14 @@ export default function UserDetailsScreen() {
         };
       }
       case 'call_operator': {
-        const allCallLogs = getCallLogs();
-        const operatorCalls = (allCallLogs || []).filter((log: any) => String(log.user_id) === String(u.id));
+        const allCallLogs = getCallLogs(u.id);
+        const operatorCalls = allCallLogs.filter((log: any) => String(log.caller_id) === String(u.id));
         const callsInRange = operatorCalls.filter((log: any) => {
           const d = new Date(log.created_at);
           return d >= start && d <= end;
         });
 
-        const operatorCallLater = getCallLaterLogsByOperator(String(u.id)) || [];
+        const operatorCallLater = getCallLaterLogsByOperator(u.id);
         const callLaterInRange = operatorCallLater.filter((log: any) => {
           const d = new Date(log.createdAt);
           return d >= start && d <= end;
@@ -351,32 +367,34 @@ export default function UserDetailsScreen() {
 
   const todayStats = useMemo(() => {
     if (!user) return null;
-    const start = new Date(); start.setHours(0, 0, 0, 0);
-    const end = new Date(); end.setHours(23, 59, 59, 999);
+    const { start, end } = getDateRange('daily');
     return getStatsForRange(user, start, end);
-  }, [user, getUserLeads]);
-
+  }, [user, getUserLeads, getCallLogs, getCallLaterLogsByOperator]);
+  
   const weekStats = useMemo(() => {
     if (!user) return null;
     const { start, end } = getDateRange('weekly');
     return getStatsForRange(user, start, end);
-  }, [user, getUserLeads]);
-
+  }, [user, getUserLeads, getCallLogs, getCallLaterLogsByOperator]);
+  
   const monthStats = useMemo(() => {
     if (!user) return null;
     const { start, end } = getDateRange('monthly');
     return getStatsForRange(user, start, end);
-  }, [user, getUserLeads]);
+  }, [user, getUserLeads, getCallLogs, getCallLaterLogsByOperator]);
+  
 
-  const downloadData = (data: any[], fileName: string) => {
+  const downloadData = async (data: any[], fileName: string) => {
+    if (data.length === 0) {
+      Alert.alert('No Data to Download', 'The selected list is empty.');
+      return;
+    }
+
+    const header = Object.keys(data[0]).join(',');
+    const csv = data.map((row) => Object.values(row).join(',')).join('\n');
+    const csvContent = `${header}\n${csv}`;
+
     if (Platform.OS === 'web') {
-      if (data.length === 0) {
-        Alert.alert('No Data to Download', 'The selected lead list is empty.');
-        return;
-      }
-      const header = Object.keys(data[0]).join(',');
-      const csv = data.map((row) => Object.values(row).join(',')).join('\n');
-      const csvContent = `${header}\n${csv}`;
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -385,7 +403,7 @@ export default function UserDetailsScreen() {
       a.click();
       URL.revokeObjectURL(url);
     } else {
-      Alert.alert('Download Not Supported', 'CSV download is currently only supported on web platforms.');
+      Alert.alert('Download Not Supported', 'CSV download on mobile requires a file system library and is not implemented in this example.');
     }
   };
 
@@ -397,20 +415,34 @@ export default function UserDetailsScreen() {
 
     let dataToDownload: any[] = [];
     let fileName = '';
+    const name = user.name;
 
     if (period === 'custom') {
-      dataToDownload = finalFilteredLeads;
-      fileName = `leads_custom_${startDateInput}_to_${endDateInput}_${user.name}.csv`;
+      dataToDownload = filteredData;
+      fileName = `${searchType}_custom_${startDateInput}_to_${endDateInput}_${name}.csv`;
     } else {
       const datePeriod = period === 'day' ? 'daily' : period === 'week' ? 'weekly' : 'monthly';
       const { start, end } = getDateRange(datePeriod as 'daily' | 'weekly' | 'monthly');
-      dataToDownload = getUserLeads(user.id).filter((lead: any) => {
-        const leadDate = new Date(lead.created_at);
-        return leadDate >= start && leadDate <= end;
-      });
-      fileName = `leads_${period}_${user.name}.csv`;
-    }
 
+      if (searchType === 'leads') {
+        const userLeads = getUserLeads(user.id);
+        dataToDownload = userLeads.filter((lead: any) => {
+          const leadDate = new Date(lead.created_at);
+          return leadDate >= start && leadDate <= end;
+        });
+      } else {
+        const callLogs = getCallLogs(user.id);
+        const callLaterLogs = getCallLaterLogsByOperator(user.id);
+        const logs = [...callLogs, ...callLaterLogs];
+        dataToDownload = logs.filter((log: any) => {
+          const logDate = new Date(log.created_at || log.createdAt);
+          return logDate >= start && logDate <= end;
+        });
+      }
+
+      fileName = `${searchType}_${period}_${name}.csv`;
+    }
+    
     if (dataToDownload.length > 0) {
       downloadData(dataToDownload, fileName);
     } else {
@@ -499,7 +531,28 @@ export default function UserDetailsScreen() {
         </View>
 
         <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Search Leads</Text>
+          <Text style={styles.sectionTitle}>Search Data</Text>
+          <View style={styles.searchTypeContainer}>
+            <TouchableOpacity
+              style={[styles.searchTypeButton, searchType === 'leads' && styles.searchTypeActive]}
+              onPress={() => {
+                setSearchType('leads');
+                setFilteredData([]);
+                setSelectedStatus('All');
+              }}
+            >
+              <Text style={[styles.searchTypeButtonText, searchType === 'leads' && styles.searchTypeButtonTextActive]}>Leads</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.searchTypeButton, searchType === 'logs' && styles.searchTypeActive]}
+              onPress={() => {
+                setSearchType('logs');
+                setFilteredData([]);
+              }}
+            >
+              <Text style={[styles.searchTypeButtonText, searchType === 'logs' && styles.searchTypeButtonTextActive]}>Logs</Text>
+            </TouchableOpacity>
+          </View>
           <View style={styles.searchRow}>
             <TextInput
               style={styles.input}
@@ -521,44 +574,63 @@ export default function UserDetailsScreen() {
           </View>
         </View>
 
-        {filteredLeads.length > 0 && (
+        {filteredData.length > 0 && (
           <View style={styles.card}>
-            <Text style={styles.sectionTitle}>Leads Found ({finalFilteredLeads.length})</Text>
-            <ScrollView horizontal style={styles.filterScroll}>
-              <TouchableOpacity
-                style={[styles.statusFilterButton, selectedStatus === 'All' && styles.statusFilterActive]}
-                onPress={() => applyStatusFilter('All')}
-              >
-                <Text style={[styles.statusFilterText, selectedStatus === 'All' && styles.statusFilterTextActive]}>All</Text>
-              </TouchableOpacity>
-              {Object.keys(leadStatusColors).map((status) => (
+            <Text style={styles.sectionTitle}>Data Found ({filteredData.length})</Text>
+            {searchType === 'leads' && (
+              <ScrollView horizontal style={styles.filterScroll} showsHorizontalScrollIndicator={false}>
                 <TouchableOpacity
-                  key={status}
-                  style={[styles.statusFilterButton, selectedStatus === status && styles.statusFilterActive]}
-                  onPress={() => applyStatusFilter(status)}
+                  style={[styles.statusFilterButton, selectedStatus === 'All' && styles.statusFilterActive]}
+                  onPress={() => applyStatusFilter('All')}
                 >
-                  <Text style={[styles.statusFilterText, selectedStatus === status && styles.statusFilterTextActive]}>{status}</Text>
+                  <Text style={[styles.statusFilterText, selectedStatus === 'All' && styles.statusFilterTextActive]}>All</Text>
                 </TouchableOpacity>
-              ))}
-            </ScrollView>
+                {Object.keys(leadStatusColors).map((status) => (
+                  <TouchableOpacity
+                    key={status}
+                    style={[styles.statusFilterButton, selectedStatus === status && styles.statusFilterActive]}
+                    onPress={() => applyStatusFilter(status)}
+                  >
+                    <Text style={[styles.statusFilterText, selectedStatus === status && styles.statusFilterTextActive]}>{status}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            )}
 
             <View style={styles.leadList}>
-              {paginatedLeads.map((lead) => (
-                <TouchableOpacity
-                  key={lead.id}
-                  style={styles.leadCard}
-                  onPress={() => router.push({ pathname: '/(super_admin)/lead-info', params: { id: lead.id } })}
-                >
-                  <View style={styles.leadCardContent}>
-                    <Text style={styles.leadCardTitle}>{lead.customer_name}</Text>
-                    <View style={[styles.leadStatusBadge, { backgroundColor: leadStatusColors[lead.status as keyof typeof leadStatusColors] }]}>
-                      <Text style={styles.leadStatusText}>{lead.status}</Text>
+              {paginatedData.map((item, index) => {
+                if (searchType === 'leads') {
+                  const lead = item;
+                  return (
+                    <TouchableOpacity
+                      key={lead.id}
+                      style={styles.leadCard}
+                      onPress={() => router.push({ pathname: '/(super_admin)/lead-info', params: { id: lead.id } })}
+                    >
+                      <View style={styles.leadCardContent}>
+                        <Text style={styles.leadCardTitle}>{lead.customer_name}</Text>
+                        <View style={[styles.leadStatusBadge, { backgroundColor: leadStatusColors[lead.status as keyof typeof leadStatusColors] }]}>
+                          <Text style={styles.leadStatusText}>{lead.status}</Text>
+                        </View>
+                      </View>
+                      <Text style={styles.leadCardDetail}>Phone: {lead.phone_number}</Text>
+                      <Text style={styles.leadCardDetail}>Created: {new Date(lead.created_at).toLocaleDateString()}</Text>
+                    </TouchableOpacity>
+                  );
+                } else {
+                  const log = item;
+                  return (
+                    <View key={log.id || index} style={styles.logCard}>
+                      <Text style={styles.logCardTitle}>Log from {log.customer_name || 'N/A'}</Text>
+                      <Text style={styles.logCardDetail}>Type: {log.type || 'Call'}</Text>
+                      <Text style={styles.logCardDetail}>Date: {new Date(log.created_at || log.createdAt).toLocaleString()}</Text>
+                      {log.status_at_call && <Text style={styles.logCardDetail}>Outcome: {log.status_at_call}</Text>}
+                      {log.reason && <Text style={styles.logCardDetail}>Reason: {log.reason}</Text>}
+                      {log.notes && <Text style={styles.logCardDetail}>Notes: {log.notes}</Text>}
                     </View>
-                  </View>
-                  <Text style={styles.leadCardDetail}>Phone: {lead.phone_number}</Text>
-                  <Text style={styles.leadCardDetail}>Created: {new Date(lead.created_at).toLocaleDateString()}</Text>
-                </TouchableOpacity>
-              ))}
+                  );
+                }
+              })}
             </View>
 
             {totalPages > 1 && (
@@ -586,7 +658,7 @@ export default function UserDetailsScreen() {
             <View style={styles.downloadSection}>
               <TouchableOpacity style={styles.downloadBtn} onPress={() => handleDownload('custom')}>
                 <Download size={16} color="#FFFFFF" />
-                <Text style={styles.downloadBtnText}>Download Leads</Text>
+                <Text style={styles.downloadBtnText}>Download Data</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -767,14 +839,42 @@ const styles = StyleSheet.create({
     color: '#64748B',
     textAlign: 'center',
   },
+  searchTypeContainer: {
+    flexDirection: 'row',
+    marginBottom: 16,
+    gap: 12,
+  },
+  searchTypeButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    alignItems: 'center',
+    backgroundColor: '#F1F5F9',
+  },
+  searchTypeActive: {
+    backgroundColor: '#7C3AED',
+    borderColor: '#7C3AED',
+  },
+  searchTypeButtonText: {
+    fontSize: 16,
+    fontFamily: 'Inter-Semi-Bold',
+    color: '#475569',
+  },
+  searchTypeButtonTextActive: {
+    color: '#FFFFFF',
+  },
   searchRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'center',
     gap: 12,
     marginBottom: 16,
   },
   input: {
     flex: 1,
+    minWidth: (width / 2) - 30,
     backgroundColor: '#F8FAFC',
     borderRadius: 12,
     padding: 14,
@@ -790,6 +890,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
+    minHeight: 52,
   },
   filterScroll: {
     marginBottom: 16,
@@ -826,6 +927,14 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E2E8F0',
   },
+  logCard: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
   leadCardContent: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -836,6 +945,12 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontFamily: 'Inter-Semi-Bold',
     color: '#1E293B',
+  },
+  logCardTitle: {
+    fontSize: 16,
+    fontFamily: 'Inter-Semi-Bold',
+    color: '#1E293B',
+    marginBottom: 8,
   },
   leadStatusBadge: {
     paddingHorizontal: 10,
@@ -849,6 +964,12 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
   leadCardDetail: {
+    fontSize: 13,
+    fontFamily: 'Inter-Regular',
+    color: '#64748B',
+    marginBottom: 4,
+  },
+  logCardDetail: {
     fontSize: 13,
     fontFamily: 'Inter-Regular',
     color: '#64748B',
