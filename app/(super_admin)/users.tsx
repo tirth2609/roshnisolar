@@ -9,6 +9,7 @@ import {
   Alert,
   Modal,
   TextInput,
+  Dimensions
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
@@ -31,11 +32,14 @@ import {
   CheckCircle,
   Activity,
   Eye,
-  X
+  X,
+  User
 } from 'lucide-react-native';
 import { useData } from '@/contexts/DataContext';
 import { UserRole } from '@/types/auth';
 import { Picker } from '@react-native-picker/picker';
+
+const { width } = Dimensions.get('window');
 
 const roleColors = {
   salesman: { bg: '#FEF3C7', text: '#92400E', border: '#F59E0B' },
@@ -88,7 +92,7 @@ export default function UsersManagementScreen() {
       return false;
     }
     const matchesSearch = user.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         user.email.toLowerCase().includes(searchQuery.toLowerCase());
+                           user.email.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesRole = selectedRole === 'all' || user.role === selectedRole;
     return matchesSearch && matchesRole;
   });
@@ -129,7 +133,6 @@ export default function UsersManagementScreen() {
   };
 
   const getUserWorkStatistics = (user: any, period: 'daily' | 'weekly' | 'monthly' = 'daily') => {
-    // Only show statistics for active users
     if (!user.is_active) {
       return {
         periodWork: 0,
@@ -415,25 +418,22 @@ export default function UsersManagementScreen() {
         onPress={() => navigateToUserDetails(user.id)}
       >
         <View style={styles.userHeader}>
-          <View style={styles.userInfo}>
-            <View style={styles.userAvatar}>
-              <Text style={styles.userAvatarText}>
-                {user.name.split(' ').map((n: string) => n[0]).join('')}
-              </Text>
-            </View>
-            <View style={styles.userDetails}>
-              <Text style={styles.userName}>{user.name}</Text>
-              <RoleBadge role={user.role} />
-            </View>
+          <View style={styles.userAvatar}>
+            <Text style={styles.userAvatarText}>
+              {user.name.split(' ').map((n: string) => n[0]).join('')}
+            </Text>
           </View>
-          <View style={styles.userStatus}>
-            <View style={[
-              styles.statusDot, 
-              { backgroundColor: user.is_active ? '#10B981' : '#EF4444' }
-            ]} />
-          </View>
+          <View style={[
+            styles.statusDot, 
+            { backgroundColor: user.is_active ? '#10B981' : '#EF4444' }
+          ]} />
         </View>
 
+        <View style={styles.userDetails}>
+          <Text style={styles.userName}>{user.name}</Text>
+          <RoleBadge role={user.role} />
+        </View>
+        
         <View style={styles.userContact}>
           <View style={styles.contactRow}>
             <Mail size={14} color="#64748B" />
@@ -442,12 +442,6 @@ export default function UsersManagementScreen() {
           <View style={styles.contactRow}>
             <Phone size={14} color="#64748B" />
             <Text style={styles.contactText}>{user.phone}</Text>
-          </View>
-          <View style={styles.contactRow}>
-            <Calendar size={14} color="#64748B" />
-            <Text style={styles.contactText}>
-              Joined {new Date(user.createdAt).toLocaleDateString()}
-            </Text>
           </View>
         </View>
 
@@ -478,7 +472,6 @@ export default function UsersManagementScreen() {
             <Edit size={16} color="#3B82F6" />
             <Text style={[styles.actionButtonText, { color: '#3B82F6' }]}>Edit</Text>
           </TouchableOpacity>
-
           <TouchableOpacity
             style={styles.actionButton}
             onPress={() => handleDeleteUser(user)}
@@ -524,7 +517,7 @@ export default function UsersManagementScreen() {
             <Text style={styles.statLabel}>Active</Text>
           </View>
           <View style={styles.statCard}>
-            <Phone size={20} color="#FF6B35" />
+            <User size={20} color="#F59E0B" />
             <Text style={styles.statNumber}>{stats.salesman}</Text>
             <Text style={styles.statLabel}>Salesmen</Text>
           </View>
@@ -611,12 +604,13 @@ export default function UsersManagementScreen() {
             </Text>
           </View>
         ) : (
-          <View style={styles.usersList}>
+          <View style={styles.usersGrid}>
             {filteredUsers.map((user) => (
               <UserCard key={user.id} user={user} />
             ))}
           </View>
         )}
+        
       </ScrollView>
 
       {/* Add User Modal */}
@@ -1273,29 +1267,38 @@ const styles = StyleSheet.create({
   },
   header: {
     paddingTop: 60,
-    paddingBottom: 20,
+    paddingBottom: 24,
     paddingHorizontal: 20,
+    borderBottomLeftRadius: 30,
+    borderBottomRightRadius: 30,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 5,
+    elevation: 8,
   },
   headerContent: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between'
   },
   logoContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: 'rgba(255, 255, 255, 0.2)',
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 12,
   },
   headerInfo: {
     flex: 1,
+    marginLeft: 16
   },
   headerTitle: {
-    fontSize: 24,
+    fontSize: 26,
     fontFamily: 'Inter-Bold',
     color: '#FFFFFF',
+    marginBottom: 4,
   },
   headerSubtitle: {
     fontSize: 14,
@@ -1304,9 +1307,9 @@ const styles = StyleSheet.create({
     opacity: 0.9,
   },
   addButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: 'rgba(255, 255, 255, 0.2)',
     justifyContent: 'center',
     alignItems: 'center',
@@ -1315,26 +1318,26 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     margin: 20,
     borderRadius: 16,
-    padding: 16,
+    paddingVertical: 20,
+    paddingHorizontal: 16,
     shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.1,
     shadowRadius: 8,
     elevation: 4,
   },
   statsGrid: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent: 'space-around',
+    flexWrap: 'wrap',
   },
   statCard: {
     alignItems: 'center',
-    flex: 1,
+    width: '25%',
+    marginBottom: 12
   },
   statNumber: {
-    fontSize: 18,
+    fontSize: 20,
     fontFamily: 'Inter-Bold',
     color: '#1E293B',
     marginTop: 8,
@@ -1344,6 +1347,7 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter-Medium',
     color: '#64748B',
     marginTop: 4,
+    textAlign: 'center'
   },
   searchContainer: {
     paddingHorizontal: 20,
@@ -1358,10 +1362,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     gap: 12,
     shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 1,
-    },
+    shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
     shadowRadius: 2,
     elevation: 1,
@@ -1381,16 +1382,23 @@ const styles = StyleSheet.create({
   },
   filterButton: {
     paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingVertical: 10,
     backgroundColor: '#FFFFFF',
-    borderRadius: 20,
+    borderRadius: 24,
     marginRight: 8,
     borderWidth: 1,
     borderColor: '#E2E8F0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
   },
   filterButtonActive: {
     backgroundColor: '#7C3AED',
     borderColor: '#7C3AED',
+    shadowOpacity: 0.15,
+    elevation: 3
   },
   filterText: {
     fontSize: 14,
@@ -1403,23 +1411,25 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
   },
-  usersList: {
-    padding: 20,
+  usersGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
     paddingTop: 0,
+    paddingBottom: 20,
   },
   userCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 12,
+    borderRadius: 16,
     padding: 16,
-    marginBottom: 12,
+    marginBottom: 16,
+    width: (width - 60) / 2, // 20px padding * 2, 20px gap
     shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
+    shadowRadius: 8,
+    elevation: 5,
   },
   userHeader: {
     flexDirection: 'row',
@@ -1427,38 +1437,41 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 12,
   },
-  userInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
   userAvatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 50,
+    height: 50,
+    borderRadius: 25,
     backgroundColor: '#7C3AED',
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 12,
   },
   userAvatarText: {
-    fontSize: 16,
+    fontSize: 20,
     fontFamily: 'Inter-Bold',
     color: '#FFFFFF',
   },
+  statusDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    position: 'absolute',
+    top: 0,
+    right: 0
+  },
   userDetails: {
-    flex: 1,
+    alignItems: 'flex-start',
+    marginBottom: 12
   },
   userName: {
-    fontSize: 16,
+    fontSize: 18,
     fontFamily: 'Inter-SemiBold',
     color: '#1E293B',
     marginBottom: 4,
   },
   roleBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 16,
     borderWidth: 1,
     alignSelf: 'flex-start',
   },
@@ -1466,17 +1479,9 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontFamily: 'Inter-Medium',
   },
-  userStatus: {
-    alignItems: 'center',
-  },
-  statusDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-  },
   userContact: {
     gap: 8,
-    marginBottom: 12,
+    marginBottom: 16,
   },
   contactRow: {
     flexDirection: 'row',
@@ -1484,13 +1489,14 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   contactText: {
-    fontSize: 14,
+    fontSize: 12,
     fontFamily: 'Inter-Regular',
     color: '#64748B',
     flex: 1,
   },
   userActions: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     gap: 8,
   },
   actionButton: {
@@ -1498,10 +1504,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    backgroundColor: '#F8FAFC',
-    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    backgroundColor: '#F1F5F9',
+    borderRadius: 10,
     gap: 4,
   },
   actionButtonText: {
@@ -1541,9 +1547,14 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: 400,
     maxHeight: '80%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    elevation: 15,
   },
   modalTitle: {
-    fontSize: 20,
+    fontSize: 22,
     fontFamily: 'Inter-Bold',
     color: '#1E293B',
     marginBottom: 20,
