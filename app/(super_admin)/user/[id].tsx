@@ -1,16 +1,18 @@
 import React, { useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert, Platform } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { 
-  Users, 
-  Mail, 
-  Phone, 
+import {
+  Users,
+  Mail,
+  Phone,
   Calendar,
   ArrowLeft,
   Activity,
   CheckCircle,
-  Target
+  Target,
+  Download,
+  Search,
 } from 'lucide-react-native';
 import { useData } from '@/contexts/DataContext';
 import { UserRole } from '@/types/auth';
@@ -21,6 +23,16 @@ const roleColors = {
   technician: { bg: '#D1FAE5', text: '#065F46', border: '#10B981' },
   team_lead: { bg: '#F3E8FF', text: '#7C3AED', border: '#8B5CF6' },
   super_admin: { bg: '#FEE2E2', text: '#991B1B', border: '#EF4444' },
+};
+
+const leadStatusColors = {
+  new: '#3B82F6',
+  contacted: '#10B981',
+  hold: '#F59E0B',
+  transit: '#8B5CF6',
+  completed: '#059669',
+  declined: '#EF4444',
+  ringing: '#FACC15',
 };
 
 function RoleBadge({ role }: { role: UserRole }) {
@@ -49,20 +61,6 @@ function getWorkLabel(role: UserRole) {
   }
 }
 
-function getCompletedLabel(role: UserRole) {
-  switch (role) {
-    case 'salesman':
-      return 'Converted';
-    case 'call_operator':
-    case 'technician':
-      return 'Completed';
-    case 'team_lead':
-      return 'Team Size';
-    default:
-      return 'Completed';
-  }
-}
-
 export default function UserDetailsScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -76,38 +74,72 @@ export default function UserDetailsScreen() {
   const mm = String(today.getMonth() + 1).padStart(2, '0');
   const dd = String(today.getDate()).padStart(2, '0');
 
-  const [dateInput, setDateInput] = useState(`${yyyy}-${mm}-${dd}`);
-  const [selectedDate, setSelectedDate] = useState<Date>(today);
+  const [startDateInput, setStartDateInput] = useState(`${yyyy}-${mm}-${dd}`);
+  const [endDateInput, setEndDateInput] = useState(`${yyyy}-${mm}-${dd}`);
+  const [filteredLeads, setFilteredLeads] = useState<any[]>([]);
+  const [selectedStatus, setSelectedStatus] = useState<string>('All');
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 5;
 
-  const onSearchDate = () => {
-    if (!dateInput) return;
-    const parts = dateInput.split('-');
-    if (parts.length !== 3) {
+  const onSearchDateRange = () => {
+    if (!user) return;
+    const fromParts = startDateInput.split('-');
+    const toParts = endDateInput.split('-');
+    if (fromParts.length !== 3 || toParts.length !== 3) {
       Alert.alert('Invalid date', 'Please enter date as YYYY-MM-DD');
       return;
     }
-    const [y, m, d] = parts.map((p) => parseInt(p, 10));
-    if (!y || !m || !d) {
+    const [fy, fm, fd] = fromParts.map((p) => parseInt(p, 10));
+    const [ty, tm, td] = toParts.map((p) => parseInt(p, 10));
+    if (!fy || !fm || !fd || !ty || !tm || !td) {
       Alert.alert('Invalid date', 'Please enter a valid date.');
       return;
     }
-    const parsed = new Date(y, m - 1, d);
-    if (isNaN(parsed.getTime())) {
-      Alert.alert('Invalid date', 'Please enter a valid date.');
+    const start = new Date(fy, fm - 1, fd);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(ty, tm - 1, td);
+    end.setHours(23, 59, 59, 999);
+    if (isNaN(start.getTime()) || isNaN(end.getTime()) || start > end) {
+      Alert.alert('Invalid date range', 'Please enter a valid date range.');
       return;
     }
-    setSelectedDate(parsed);
+
+    const userLeads = getUserLeads(user.id);
+    const leads = userLeads.filter((lead: any) => {
+      const leadDate = new Date(lead.created_at);
+      return leadDate >= start && leadDate <= end;
+    });
+
+    setFilteredLeads(leads);
+    setCurrentPage(1); // Reset to first page on new search
   };
+
+  const applyStatusFilter = (status: string) => {
+    setSelectedStatus(status);
+    setCurrentPage(1); // Reset to first page on new filter
+  };
+
+  const finalFilteredLeads = useMemo(() => {
+    if (selectedStatus === 'All') {
+      return filteredLeads;
+    }
+    return filteredLeads.filter((lead) => lead.status === selectedStatus);
+  }, [filteredLeads, selectedStatus]);
+
+  const totalPages = Math.ceil(finalFilteredLeads.length / pageSize);
+  const paginatedLeads = finalFilteredLeads.slice(
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize
+  );
 
   const statsForDate = useMemo(() => {
     if (!user) return null;
-    const start = new Date(selectedDate);
+    const start = new Date(startDateInput);
     start.setHours(0, 0, 0, 0);
-    const end = new Date(selectedDate);
+    const end = new Date(endDateInput);
     end.setHours(23, 59, 59, 999);
 
     const userLeads = getUserLeads(user.id);
-    const workStats = getUserWorkStats(user.id);
 
     const leadsCreatedThatDay = userLeads.filter((lead: any) => {
       const leadDate = new Date(lead.created_at);
@@ -148,12 +180,10 @@ export default function UserDetailsScreen() {
           return d >= start && d <= end;
         });
 
-        // Work count from calls + call-later
         const periodCalls = callsInRange.length;
         const periodCallLater = callLaterInRange.length;
         const periodWork = periodCalls + periodCallLater;
 
-        // Completed and Day's Rate from leads updated in period
         const periodOperatorLeads = leadsUpdatedThatDay.filter((lead: any) => lead.call_operator_id === user.id);
         const periodCompletedLeads = periodOperatorLeads.filter((lead: any) => lead.status === 'completed');
 
@@ -208,7 +238,7 @@ export default function UserDetailsScreen() {
           periodConversionRate: '0',
         };
     }
-  }, [user, selectedDate, getUserLeads, getUserWorkStats, users]);
+  }, [user, startDateInput, endDateInput, getUserLeads, getUserWorkStats, getCallLogs, getCallLaterLogsByOperator]);
 
   // Helpers for standard period windows and aggregation
   const getDateRange = (period: 'daily' | 'weekly' | 'monthly') => {
@@ -338,39 +368,55 @@ export default function UserDetailsScreen() {
     return getStatsForRange(user, start, end);
   }, [user, getUserLeads]);
 
-  const previousMonths = useMemo(() => {
-    if (!user) return [] as Array<{ key: string; date: Date; stats: any }>;
-    const userLeads = getUserLeads(user.id);
+  const downloadData = (data: any[], fileName: string) => {
+    if (Platform.OS === 'web') {
+      if (data.length === 0) {
+        Alert.alert('No Data to Download', 'The selected lead list is empty.');
+        return;
+      }
+      const header = Object.keys(data[0]).join(',');
+      const csv = data.map((row) => Object.values(row).join(',')).join('\n');
+      const csvContent = `${header}\n${csv}`;
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      a.click();
+      URL.revokeObjectURL(url);
+    } else {
+      Alert.alert('Download Not Supported', 'CSV download is currently only supported on web platforms.');
+    }
+  };
 
-    const relevantLeads = userLeads.filter((lead: any) => {
-      if ((user.role as UserRole) === 'salesman') return lead.salesman_id === user.id;
-      if ((user.role as UserRole) === 'call_operator') return lead.call_operator_id === user.id;
-      if ((user.role as UserRole) === 'technician') return lead.technician_id === user.id;
-      if ((user.role as UserRole) === 'team_lead') return true;
-      return false;
-    });
-
-    const buckets = new Map<string, { start: Date; end: Date }>();
-    for (const lead of relevantLeads) {
-      const d = new Date(((user.role as UserRole) === 'salesman' || (user.role as UserRole) === 'team_lead') ? lead.created_at : lead.updated_at);
-      if (isNaN(d.getTime())) continue;
-      const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-      const start = new Date(d.getFullYear(), d.getMonth(), 1, 0, 0, 0, 0);
-      const end = new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59, 999);
-      if (!buckets.has(ym)) buckets.set(ym, { start, end });
+  const handleDownload = (period: 'day' | 'week' | 'month' | 'custom') => {
+    if (!user) {
+      Alert.alert('User Not Found', 'Cannot download data for an invalid user.');
+      return;
     }
 
-    const now = new Date();
-    const currentYM = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-    const keys = Array.from(buckets.keys()).filter(k => k !== currentYM).sort((a, b) => (a < b ? 1 : -1));
+    let dataToDownload: any[] = [];
+    let fileName = '';
 
-    return keys.map(key => {
-      const range = buckets.get(key)!;
-      const stats = getStatsForRange(user, range.start, range.end);
-      const [y, m] = key.split('-').map(n => parseInt(n, 10));
-      return { key, date: new Date(y, m - 1, 1), stats };
-    });
-  }, [user, getUserLeads]);
+    if (period === 'custom') {
+      dataToDownload = finalFilteredLeads;
+      fileName = `leads_custom_${startDateInput}_to_${endDateInput}_${user.name}.csv`;
+    } else {
+      const datePeriod = period === 'day' ? 'daily' : period === 'week' ? 'weekly' : 'monthly';
+      const { start, end } = getDateRange(datePeriod as 'daily' | 'weekly' | 'monthly');
+      dataToDownload = getUserLeads(user.id).filter((lead: any) => {
+        const leadDate = new Date(lead.created_at);
+        return leadDate >= start && leadDate <= end;
+      });
+      fileName = `leads_${period}_${user.name}.csv`;
+    }
+
+    if (dataToDownload.length > 0) {
+      downloadData(dataToDownload, fileName);
+    } else {
+      Alert.alert('No Data', 'There is no data to download for the selected period.');
+    }
+  };
 
   if (!user) {
     return (
@@ -402,26 +448,7 @@ export default function UserDetailsScreen() {
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Quick Summary</Text>
-          <View style={styles.periodStatsGrid}>
-            <View style={styles.periodStatCard}>
-              <Activity size={20} color="#F59E0B" />
-              <Text style={styles.periodStatNumber}>{todayStats?.periodWork || 0}</Text>
-              <Text style={styles.periodStatLabel}>Today {getWorkLabel(user.role as UserRole)}</Text>
-            </View>
-            <View style={styles.periodStatCard}>
-              <Activity size={20} color="#F59E0B" />
-              <Text style={styles.periodStatNumber}>{weekStats?.periodWork || 0}</Text>
-              <Text style={styles.periodStatLabel}>This Week {getWorkLabel(user.role as UserRole)}</Text>
-            </View>
-            <View style={styles.periodStatCard}>
-              <Activity size={20} color="#F59E0B" />
-              <Text style={styles.periodStatNumber}>{monthStats?.periodWork || 0}</Text>
-              <Text style={styles.periodStatLabel}>This Month {getWorkLabel(user.role as UserRole)}</Text>
-            </View>
-          </View>
-        </View>
-        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>User Information</Text>
           <View style={styles.userHeader}>
             <View style={styles.userAvatar}>
               <Text style={styles.userAvatarText}>
@@ -451,94 +478,137 @@ export default function UserDetailsScreen() {
         </View>
 
         <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Search Work by Date</Text>
-          <View style={styles.searchRow}>
-            <TextInput
-              style={styles.input}
-              placeholder="YYYY-MM-DD"
-              value={dateInput}
-              onChangeText={setDateInput}
-              autoCapitalize="none"
-            />
-            <TouchableOpacity style={styles.searchBtn} onPress={onSearchDate}>
-              <Text style={styles.searchBtnText}>Search</Text>
-            </TouchableOpacity>
-          </View>
-          <Text style={styles.smallNote}>Showing data for {selectedDate.toLocaleDateString()}</Text>
-
-          {statsForDate && (
-            <View style={styles.statsRow}>
-              <View style={styles.statCard}>
-                <Activity size={20} color="#F59E0B" />
-                <Text style={styles.statNumber}>{statsForDate.periodWork}</Text>
-                <Text style={styles.statLabel}>{getWorkLabel(user.role as UserRole)}</Text>
-              </View>
-              <View style={styles.statCard}>
-                <CheckCircle size={20} color="#10B981" />
-                <Text style={styles.statNumber}>{statsForDate.periodCompleted}</Text>
-                <Text style={styles.statLabel}>{getCompletedLabel(user.role as UserRole)}</Text>
-              </View>
-              <View style={styles.statCard}>
-                <Target size={20} color="#8B5CF6" />
-                <Text style={styles.statNumber}>{String(statsForDate.periodConversionRate)}%</Text>
-                <Text style={styles.statLabel}>Day's Rate</Text>
-              </View>
+          <Text style={styles.sectionTitle}>Quick Summary</Text>
+          <View style={styles.periodStatsGrid}>
+            <View style={styles.periodStatCard}>
+              <Activity size={20} color="#F59E0B" />
+              <Text style={styles.periodStatNumber}>{todayStats?.periodWork || 0}</Text>
+              <Text style={styles.periodStatLabel}>Today {getWorkLabel(user.role as UserRole)}</Text>
             </View>
-          )}
+            <View style={styles.periodStatCard}>
+              <Activity size={20} color="#F59E0B" />
+              <Text style={styles.periodStatNumber}>{weekStats?.periodWork || 0}</Text>
+              <Text style={styles.periodStatLabel}>This Week {getWorkLabel(user.role as UserRole)}</Text>
+            </View>
+            <View style={styles.periodStatCard}>
+              <Activity size={20} color="#F59E0B" />
+              <Text style={styles.periodStatNumber}>{monthStats?.periodWork || 0}</Text>
+              <Text style={styles.periodStatLabel}>This Month {getWorkLabel(user.role as UserRole)}</Text>
+            </View>
+          </View>
         </View>
 
         <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Overall Performance</Text>
-          {statsForDate && (
-            <View style={styles.statsRow}>
-              <View style={styles.statCard}>
-                <Activity size={20} color="#F59E0B" />
-                <Text style={styles.statNumber}>{statsForDate.totalWork}</Text>
-                <Text style={styles.statLabel}>Total Work</Text>
-              </View>
-              <View style={styles.statCard}>
-                <CheckCircle size={20} color="#10B981" />
-                <Text style={styles.statNumber}>{statsForDate.totalCompleted}</Text>
-                <Text style={styles.statLabel}>Total Completed</Text>
-              </View>
-              <View style={styles.statCard}>
-                <Target size={20} color="#8B5CF6" />
-                <Text style={styles.statNumber}>{String(statsForDate.conversionRate)}%</Text>
-                <Text style={styles.statLabel}>Overall Rate</Text>
-              </View>
-            </View>
-          )}
+          <Text style={styles.sectionTitle}>Search Leads</Text>
+          <View style={styles.searchRow}>
+            <TextInput
+              style={styles.input}
+              placeholder="Start Date (YYYY-MM-DD)"
+              value={startDateInput}
+              onChangeText={setStartDateInput}
+              autoCapitalize="none"
+            />
+            <TextInput
+              style={styles.input}
+              placeholder="End Date (YYYY-MM-DD)"
+              value={endDateInput}
+              onChangeText={setEndDateInput}
+              autoCapitalize="none"
+            />
+            <TouchableOpacity style={styles.searchBtn} onPress={onSearchDateRange}>
+              <Search size={20} color="#FFFFFF" />
+            </TouchableOpacity>
+          </View>
         </View>
 
-        {previousMonths.length > 0 && (
+        {filteredLeads.length > 0 && (
           <View style={styles.card}>
-            <Text style={styles.sectionTitle}>Previous Months</Text>
-            {previousMonths.map(({ key, date, stats }) => (
-              <View key={key} style={styles.monthRow}>
-                <Text style={styles.monthTitle}>
-                  {date.toLocaleString(undefined, { month: 'long', year: 'numeric' })}
+            <Text style={styles.sectionTitle}>Leads Found ({finalFilteredLeads.length})</Text>
+            <ScrollView horizontal style={styles.filterScroll}>
+              <TouchableOpacity
+                style={[styles.statusFilterButton, selectedStatus === 'All' && styles.statusFilterActive]}
+                onPress={() => applyStatusFilter('All')}
+              >
+                <Text style={[styles.statusFilterText, selectedStatus === 'All' && styles.statusFilterTextActive]}>All</Text>
+              </TouchableOpacity>
+              {Object.keys(leadStatusColors).map((status) => (
+                <TouchableOpacity
+                  key={status}
+                  style={[styles.statusFilterButton, selectedStatus === status && styles.statusFilterActive]}
+                  onPress={() => applyStatusFilter(status)}
+                >
+                  <Text style={[styles.statusFilterText, selectedStatus === status && styles.statusFilterTextActive]}>{status}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+
+            <View style={styles.leadList}>
+              {paginatedLeads.map((lead) => (
+                <TouchableOpacity
+                  key={lead.id}
+                  style={styles.leadCard}
+                  onPress={() => router.push({ pathname: '/(super_admin)/lead-info', params: { id: lead.id } })}
+                >
+                  <View style={styles.leadCardContent}>
+                    <Text style={styles.leadCardTitle}>{lead.customer_name}</Text>
+                    <View style={[styles.leadStatusBadge, { backgroundColor: leadStatusColors[lead.status as keyof typeof leadStatusColors] }]}>
+                      <Text style={styles.leadStatusText}>{lead.status}</Text>
+                    </View>
+                  </View>
+                  <Text style={styles.leadCardDetail}>Phone: {lead.phone_number}</Text>
+                  <Text style={styles.leadCardDetail}>Created: {new Date(lead.created_at).toLocaleDateString()}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {totalPages > 1 && (
+              <View style={styles.paginationContainer}>
+                <TouchableOpacity
+                  onPress={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
+                  disabled={currentPage === 1}
+                  style={[styles.paginationButton, currentPage === 1 && styles.paginationDisabled]}
+                >
+                  <Text style={styles.paginationText}>Previous</Text>
+                </TouchableOpacity>
+                <Text style={styles.pageNumber}>
+                  Page {currentPage} of {totalPages}
                 </Text>
-                <View style={styles.monthStats}>
-                  <View style={styles.monthStatItem}>
-                    <Activity size={16} color="#F59E0B" />
-                    <Text style={styles.monthStatText}>{stats.periodWork}</Text>
-                    <Text style={styles.monthStatLabel}>{getWorkLabel(user.role as UserRole)}</Text>
-                  </View>
-                  <View style={styles.monthStatItem}>
-                    <CheckCircle size={16} color="#10B981" />
-                    <Text style={styles.monthStatText}>{stats.periodCompleted}</Text>
-                    <Text style={styles.monthStatLabel}>{getCompletedLabel(user.role as UserRole)}</Text>
-                  </View>
-                  <View style={styles.monthStatItem}>
-                    <Target size={16} color="#8B5CF6" />
-                    <Text style={styles.monthStatText}>{String(stats.periodConversionRate)}%</Text>
-                    <Text style={styles.monthStatLabel}>Rate</Text>
-                  </View>
-                </View>
+                <TouchableOpacity
+                  onPress={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
+                  disabled={currentPage === totalPages}
+                  style={[styles.paginationButton, currentPage === totalPages && styles.paginationDisabled]}
+                >
+                  <Text style={styles.paginationText}>Next</Text>
+                </TouchableOpacity>
               </View>
-            ))}
+            )}
+
+            <View style={styles.downloadSection}>
+              <TouchableOpacity style={styles.downloadBtn} onPress={() => handleDownload('custom')}>
+                <Download size={16} color="#FFFFFF" />
+                <Text style={styles.downloadBtnText}>Download Leads</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         )}
+
+        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>Download Analytics</Text>
+          <View style={styles.downloadGrid}>
+            <TouchableOpacity style={styles.downloadGridBtn} onPress={() => handleDownload('day')}>
+              <Text style={styles.downloadGridText}>Today</Text>
+              <Download size={20} color="#7C3AED" />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.downloadGridBtn} onPress={() => handleDownload('week')}>
+              <Text style={styles.downloadGridText}>This Week</Text>
+              <Download size={20} color="#7C3AED" />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.downloadGridBtn} onPress={() => handleDownload('month')}>
+              <Text style={styles.downloadGridText}>This Month</Text>
+              <Download size={20} color="#7C3AED" />
+            </TouchableOpacity>
+          </View>
+        </View>
       </ScrollView>
     </View>
   );
@@ -547,175 +617,128 @@ export default function UserDetailsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#F0F4F8',
   },
   header: {
     paddingTop: 60,
-    paddingBottom: 20,
+    paddingBottom: 24,
     paddingHorizontal: 20,
+    borderBottomLeftRadius: 30,
+    borderBottomRightRadius: 30,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 5,
+    elevation: 8,
   },
   headerContent: {
     flexDirection: 'row',
     alignItems: 'center',
   },
   backIconBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: 'rgba(255, 255, 255, 0.2)',
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 8,
+    marginRight: 10,
   },
   logoContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: 'rgba(255, 255, 255, 0.2)',
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 12,
+    marginRight: 16,
   },
   headerInfo: {
     flex: 1,
   },
   headerTitle: {
-    fontSize: 24,
+    fontSize: 26,
     fontFamily: 'Inter-Bold',
     color: '#FFFFFF',
+    marginBottom: 4,
   },
   headerSubtitle: {
     fontSize: 14,
     fontFamily: 'Inter-Regular',
-    color: '#FFFFFF',
+    color: '#E2E8F0',
     opacity: 0.9,
   },
   content: {
     flex: 1,
+    padding: 16,
   },
   card: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 16,
-    margin: 20,
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 16,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontFamily: 'Inter-Semi-Bold',
+    color: '#1E293B',
+    marginBottom: 16,
   },
   userHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 20,
   },
   userAvatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 64,
+    height: 64,
+    borderRadius: 32,
     backgroundColor: '#7C3AED',
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 12,
+    marginRight: 16,
   },
   userAvatarText: {
-    fontSize: 16,
+    fontSize: 24,
     fontFamily: 'Inter-Bold',
     color: '#FFFFFF',
   },
   userMeta: { flex: 1 },
   userName: {
-    fontSize: 16,
-    fontFamily: 'Inter-SemiBold',
+    fontSize: 20,
+    fontFamily: 'Inter-Semi-Bold',
     color: '#1E293B',
-    marginBottom: 4,
+    marginBottom: 6,
   },
   roleBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 16,
     borderWidth: 1,
     alignSelf: 'flex-start',
   },
   roleText: {
-    fontSize: 12,
+    fontSize: 13,
     fontFamily: 'Inter-Medium',
   },
   userContact: {
-    gap: 8,
-    marginTop: 8,
+    gap: 12,
   },
   contactRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 12,
   },
   contactText: {
-    fontSize: 14,
+    fontSize: 15,
     fontFamily: 'Inter-Regular',
-    color: '#64748B',
+    color: '#475569',
     flex: 1,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontFamily: 'Inter-SemiBold',
-    color: '#1E293B',
-    marginBottom: 12,
-  },
-  searchRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 8,
-  },
-  input: {
-    flex: 1,
-    backgroundColor: '#F8FAFC',
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 16,
-    fontFamily: 'Inter-Regular',
-    color: '#1E293B',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  searchBtn: {
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    backgroundColor: '#7C3AED',
-    borderRadius: 8,
-  },
-  searchBtnText: {
-    fontSize: 14,
-    fontFamily: 'Inter-SemiBold',
-    color: '#FFFFFF',
-  },
-  smallNote: {
-    fontSize: 12,
-    fontFamily: 'Inter-Regular',
-    color: '#64748B',
-    marginBottom: 12,
-  },
-  statsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  statCard: {
-    alignItems: 'center',
-    flex: 1,
-  },
-  statNumber: {
-    fontSize: 18,
-    fontFamily: 'Inter-Bold',
-    color: '#1E293B',
-    marginTop: 8,
-    marginBottom: 4,
-  },
-  statLabel: {
-    fontSize: 12,
-    fontFamily: 'Inter-Medium',
-    color: '#64748B',
-    textAlign: 'center',
   },
   periodStatsGrid: {
     flexDirection: 'row',
@@ -723,11 +746,16 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   periodStatCard: {
-    alignItems: 'center',
     flex: 1,
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
   },
   periodStatNumber: {
-    fontSize: 18,
+    fontSize: 20,
     fontFamily: 'Inter-Bold',
     color: '#1E293B',
     marginTop: 8,
@@ -739,35 +767,135 @@ const styles = StyleSheet.create({
     color: '#64748B',
     textAlign: 'center',
   },
-  monthRow: {
-    marginBottom: 12,
+  searchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 16,
   },
-  monthTitle: {
-    fontSize: 16,
-    fontFamily: 'Inter-SemiBold',
+  input: {
+    flex: 1,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    padding: 14,
+    fontSize: 15,
+    fontFamily: 'Inter-Regular',
     color: '#1E293B',
-    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
   },
-  monthStats: {
+  searchBtn: {
+    padding: 14,
+    backgroundColor: '#7C3AED',
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  filterScroll: {
+    marginBottom: 16,
+  },
+  statusFilterButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 24,
+    marginRight: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    backgroundColor: '#F1F5F9',
+  },
+  statusFilterActive: {
+    backgroundColor: '#7C3AED',
+    borderColor: '#7C3AED',
+  },
+  statusFilterText: {
+    fontSize: 14,
+    fontFamily: 'Inter-Medium',
+    color: '#475569',
+  },
+  statusFilterTextActive: {
+    color: '#FFFFFF',
+  },
+  leadList: {
+    marginTop: 12,
+  },
+  leadCard: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  leadCardContent: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-  },
-  monthStatItem: {
     alignItems: 'center',
-    flex: 1,
+    marginBottom: 8,
   },
-  monthStatText: {
+  leadCardTitle: {
     fontSize: 16,
-    fontFamily: 'Inter-Bold',
+    fontFamily: 'Inter-Semi-Bold',
     color: '#1E293B',
-    marginTop: 4,
-    marginBottom: 2,
   },
-  monthStatLabel: {
-    fontSize: 12,
+  leadStatusBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  leadStatusText: {
+    fontSize: 11,
     fontFamily: 'Inter-Medium',
+    color: '#FFFFFF',
+    textTransform: 'uppercase',
+  },
+  leadCardDetail: {
+    fontSize: 13,
+    fontFamily: 'Inter-Regular',
     color: '#64748B',
-    textAlign: 'center',
+    marginBottom: 4,
+  },
+  downloadSection: {
+    marginTop: 16,
+    alignItems: 'center',
+  },
+  downloadBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#7C3AED',
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    gap: 10,
+  },
+  downloadBtnText: {
+    fontSize: 16,
+    fontFamily: 'Inter-Semi-Bold',
+    color: '#FFFFFF',
+  },
+  downloadGrid: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  downloadGridBtn: {
+    flex: 1,
+    alignItems: 'center',
+    backgroundColor: '#F1F5F9',
+    borderRadius: 12,
+    paddingVertical: 20,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  downloadGridText: {
+    fontSize: 14,
+    fontFamily: 'Inter-Semi-Bold',
+    color: '#475569',
+    marginBottom: 8,
   },
   backBtn: {
     paddingVertical: 10,
@@ -777,9 +905,32 @@ const styles = StyleSheet.create({
   },
   backBtnText: {
     color: '#334155',
-    fontFamily: 'Inter-SemiBold',
+    fontFamily: 'Inter-Semi-Bold',
     fontSize: 14,
   },
+  paginationContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 16,
+    gap: 12,
+  },
+  paginationButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: '#7C3AED',
+    borderRadius: 8,
+  },
+  paginationText: {
+    color: '#FFFFFF',
+    fontFamily: 'Inter-Semi-Bold',
+  },
+  pageNumber: {
+    fontFamily: 'Inter-Medium',
+    color: '#1E293B',
+    fontSize: 14,
+  },
+  paginationDisabled: {
+    opacity: 0.5,
+  },
 });
-
-
