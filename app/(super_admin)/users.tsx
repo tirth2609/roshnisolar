@@ -9,13 +9,14 @@ import {
   Alert,
   Modal,
   TextInput,
+  Dimensions,
+  Platform,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useRouter } from 'expo-router';
-import { 
-  Users, 
-  Plus, 
-  Search, 
+import {
+  Users,
+  Plus,
+  Search,
   Filter,
   Edit,
   Trash2,
@@ -37,6 +38,8 @@ import { useData } from '@/contexts/DataContext';
 import { UserRole } from '@/types/auth';
 import { Picker } from '@react-native-picker/picker';
 
+const { width } = Dimensions.get('window');
+
 const roleColors = {
   salesman: { bg: '#FEF3C7', text: '#92400E', border: '#F59E0B' },
   call_operator: { bg: '#DBEAFE', text: '#1E40AF', border: '#3B82F6' },
@@ -46,29 +49,24 @@ const roleColors = {
 };
 
 export default function UsersManagementScreen() {
-  const router = useRouter();
-  const { 
-    getAllUsers, 
-    getActiveUsers,
-    addUser, 
-    updateUser, 
-    deleteUser, 
+  const {
+    getAllUsers,
+    addUser,
+    updateUser,
+    deleteUser,
     toggleUserStatus,
     getUserLeads,
-    getUserTickets,
     getUserWorkStats,
-    isLoading, 
-    refreshData 
+    isLoading,
+    refreshData
   } = useData();
-  
+
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedRole, setSelectedRole] = useState<UserRole | 'all'>('all');
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showUserDetailsModal, setShowUserDetailsModal] = useState(false);
   const [showAnalyticsModal, setShowAnalyticsModal] = useState(false);
-  const [showReassignModal, setShowReassignModal] = useState(false);
-
   const [selectedUser, setSelectedUser] = useState<any>(null);
   const [newUser, setNewUser] = useState({
     name: '',
@@ -79,31 +77,26 @@ export default function UsersManagementScreen() {
   });
 
   const users = getAllUsers();
-
-  const navigateToUserDetails = (id: string | number) => {
-    router.push({ pathname: '/user/[id]', params: { id: String(id) } } as any);
-  };
   const filteredUsers = users.filter(user => {
     if (!user || !user.name || !user.email) {
       return false;
     }
     const matchesSearch = user.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         user.email.toLowerCase().includes(searchQuery.toLowerCase());
+                          user.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                          (user.phone && user.phone.includes(searchQuery));
     const matchesRole = selectedRole === 'all' || user.role === selectedRole;
     return matchesSearch && matchesRole;
   });
 
   const getRoleStats = () => {
-    const activeUsers = getActiveUsers();
     return {
       total: users.length,
-      active: activeUsers.length,
-      inactive: users.length - activeUsers.length,
-      salesman: activeUsers.filter(u => u.role === 'salesman').length,
-      call_operator: activeUsers.filter(u => u.role === 'call_operator').length,
-      technician: activeUsers.filter(u => u.role === 'technician').length,
-      team_lead: activeUsers.filter(u => u.role === 'team_lead').length,
-      super_admin: activeUsers.filter(u => u.role === 'super_admin').length,
+      salesman: users.filter(u => u.role === 'salesman').length,
+      call_operator: users.filter(u => u.role === 'call_operator').length,
+      technician: users.filter(u => u.role === 'technician').length,
+      team_lead: users.filter(u => u.role === 'team_lead').length,
+      super_admin: users.filter(u => u.role === 'super_admin').length,
+      active: users.filter(u => u.is_active).length,
     };
   };
 
@@ -112,10 +105,11 @@ export default function UsersManagementScreen() {
   const getDateRange = (period: 'daily' | 'weekly' | 'monthly') => {
     const now = new Date();
     const start = new Date();
-    
+
+    start.setHours(0, 0, 0, 0);
+
     switch (period) {
       case 'daily':
-        start.setHours(0, 0, 0, 0);
         break;
       case 'weekly':
         start.setDate(now.getDate() - 7);
@@ -124,110 +118,117 @@ export default function UsersManagementScreen() {
         start.setMonth(now.getMonth() - 1);
         break;
     }
-    
+
     return { start, end: now };
   };
 
   const getUserWorkStatistics = (user: any, period: 'daily' | 'weekly' | 'monthly' = 'daily') => {
-    // Only show statistics for active users
-    if (!user.is_active) {
-      return {
-        periodWork: 0,
-        periodCompleted: 0,
-        totalWork: 0,
-        totalCompleted: 0,
-        conversionRate: '0',
-        periodConversionRate: '0'
-      };
-    }
-
     const { start, end } = getDateRange(period);
     const userLeads = getUserLeads(user.id);
-    const workStats = getUserWorkStats(user.id);
-    
+
     const periodLeads = userLeads.filter(lead => {
       const leadDate = new Date(lead.created_at);
       return leadDate >= start && leadDate <= end;
     });
-    
+
     const periodUpdatedLeads = userLeads.filter(lead => {
       const leadDate = new Date(lead.updated_at);
       return leadDate >= start && leadDate <= end;
     });
-    
+
     switch (user.role) {
       case 'salesman':
         const periodSalesLeads = periodLeads.filter(lead => lead.salesman_id === user.id);
         const completedSalesLeads = periodSalesLeads.filter(lead => lead.status === 'completed');
         const totalSalesLeads = userLeads.filter(lead => lead.salesman_id === user.id);
         const totalCompletedSales = totalSalesLeads.filter(lead => lead.status === 'completed');
-        
+
         return {
           periodWork: periodSalesLeads.length,
           periodCompleted: completedSalesLeads.length,
           totalWork: totalSalesLeads.length,
           totalCompleted: totalCompletedSales.length,
-          conversionRate: totalSalesLeads.length > 0 
+          conversionRate: totalSalesLeads.length > 0
             ? ((totalCompletedSales.length / totalSalesLeads.length) * 100).toFixed(1)
             : '0',
-          periodConversionRate: periodSalesLeads.length > 0 
+          periodConversionRate: periodSalesLeads.length > 0
             ? ((completedSalesLeads.length / periodSalesLeads.length) * 100).toFixed(1)
             : '0'
         };
-      
+
       case 'call_operator':
         const periodCallLeads = periodUpdatedLeads.filter(lead => lead.call_operator_id === user.id);
-        const completedCallLeads = periodCallLeads.filter(lead => lead.status === 'completed');
+        const convertedCallLeads = periodCallLeads.filter(lead => lead.status === 'completed');
         const totalCallLeads = userLeads.filter(lead => lead.call_operator_id === user.id);
-        const totalCompletedCalls = totalCallLeads.filter(lead => lead.status === 'completed');
-        
+        const totalConvertedCalls = totalCallLeads.filter(lead => lead.status === 'completed');
+
         return {
           periodWork: periodCallLeads.length,
-          periodCompleted: completedCallLeads.length,
+          periodCompleted: convertedCallLeads.length,
           totalWork: totalCallLeads.length,
-          totalCompleted: totalCompletedCalls.length,
-          conversionRate: totalCallLeads.length > 0 
-            ? ((totalCompletedCalls.length / totalCallLeads.length) * 100).toFixed(1)
+          totalCompleted: totalConvertedCalls.length,
+          conversionRate: totalCallLeads.length > 0
+            ? ((totalConvertedCalls.length / totalCallLeads.length) * 100).toFixed(1)
             : '0',
-          periodConversionRate: periodCallLeads.length > 0 
-            ? ((completedCallLeads.length / periodCallLeads.length) * 100).toFixed(1)
+          periodConversionRate: periodCallLeads.length > 0
+            ? ((convertedCallLeads.length / periodCallLeads.length) * 100).toFixed(1)
             : '0'
         };
-      
+
       case 'technician':
         const periodTechLeads = periodUpdatedLeads.filter(lead => lead.technician_id === user.id);
         const completedTechLeads = periodTechLeads.filter(lead => lead.status === 'completed');
         const totalTechLeads = userLeads.filter(lead => lead.technician_id === user.id);
         const totalCompletedTech = totalTechLeads.filter(lead => lead.status === 'completed');
-        
+
         return {
           periodWork: periodTechLeads.length,
           periodCompleted: completedTechLeads.length,
           totalWork: totalTechLeads.length,
           totalCompleted: totalCompletedTech.length,
-          conversionRate: totalTechLeads.length > 0 
+          conversionRate: totalTechLeads.length > 0
             ? ((totalCompletedTech.length / totalTechLeads.length) * 100).toFixed(1)
             : '0',
-          periodConversionRate: periodTechLeads.length > 0 
+          periodConversionRate: periodTechLeads.length > 0
             ? ((completedTechLeads.length / periodTechLeads.length) * 100).toFixed(1)
             : '0'
         };
-      
+
       case 'team_lead':
-        const teamMembers = getActiveUsers().filter(u => u.role === 'call_operator');
-        const periodManagedLeads = periodLeads.length;
-        const totalManagedLeads = userLeads.length;
-        
+        const teamMembers = users.filter(u => (u.role === 'call_operator' || u.role === 'technician') && u.is_active);
+        const managedLeads = getUserLeads(user.id);
+        const periodManagedLeads = managedLeads.filter(lead => {
+            const leadDate = new Date(lead.created_at);
+            return leadDate >= start && leadDate <= end;
+        }).length;
+
+        const totalManagedLeads = managedLeads.length;
+
         return {
           periodWork: periodManagedLeads,
-          periodCompleted: 0, // Team leads don't directly complete leads
+          periodCompleted: 0,
           totalWork: totalManagedLeads,
           totalCompleted: 0,
           conversionRate: 'N/A',
           periodConversionRate: 'N/A',
           teamMembers: teamMembers.length
         };
-      
+
+      case 'super_admin':
+        const adminLeads = userLeads.filter(lead => {
+            const leadDate = new Date(lead.created_at);
+            return leadDate >= start && leadDate <= end;
+        });
+        const adminCompleted = adminLeads.filter(lead => lead.status === 'completed').length;
+        return {
+          periodWork: adminLeads.length,
+          periodCompleted: adminCompleted,
+          totalWork: userLeads.length,
+          totalCompleted: userLeads.filter(lead => lead.status === 'completed').length,
+          conversionRate: userLeads.length > 0 ? ((userLeads.filter(lead => lead.status === 'completed').length / userLeads.length) * 100).toFixed(1) : '0',
+          periodConversionRate: adminLeads.length > 0 ? ((adminCompleted / adminLeads.length) * 100).toFixed(1) : '0',
+        };
+
       default:
         return {
           periodWork: 0,
@@ -240,16 +241,19 @@ export default function UsersManagementScreen() {
     }
   };
 
+
   const getWorkLabel = (role: UserRole, period: 'daily' | 'weekly' | 'monthly') => {
     switch (role) {
       case 'salesman':
-        return 'Leads';
+        return 'Leads Generated';
       case 'call_operator':
-        return 'Calls';
+        return 'Calls Made';
       case 'technician':
-        return 'Visits';
+        return 'Site Visits';
       case 'team_lead':
-        return 'Managed';
+        return 'Managed Leads';
+      case 'super_admin':
+        return 'System Leads';
       default:
         return 'Work';
     }
@@ -260,11 +264,13 @@ export default function UsersManagementScreen() {
       case 'salesman':
         return 'Converted';
       case 'call_operator':
-        return 'Completed';
+        return 'Converted';
       case 'technician':
         return 'Completed';
       case 'team_lead':
         return 'Team Size';
+      case 'super_admin':
+        return 'Converted';
       default:
         return 'Completed';
     }
@@ -288,7 +294,7 @@ export default function UsersManagementScreen() {
       });
       Alert.alert('Success', 'User added successfully!');
     } catch (error) {
-      // Error is already handled in the DataContext
+      console.error('Error adding user in UI:', error);
     }
   };
 
@@ -301,37 +307,14 @@ export default function UsersManagementScreen() {
       setSelectedUser(null);
       Alert.alert('Success', 'User updated successfully!');
     } catch (error) {
-      // Error is already handled in the DataContext
+      console.error('Error editing user in UI:', error);
     }
   };
 
-  const handleDeleteUser = (user: any) => {
-    // Check if user has assigned leads or tickets
-    const userLeads = getUserLeads(user.id);
-    const userTickets = getUserTickets(user.id);
-    
-    if (userLeads.length > 0 || userTickets.length > 0) {
-      Alert.alert(
-        'User Has Assigned Work',
-        `${user.name} has ${userLeads.length} assigned leads and ${userTickets.length} assigned tickets.\n\nWould you like to reassign their work to another user before deletion?`,
-        [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Reassign & Delete',
-            style: 'destructive',
-            onPress: () => openReassignModal(user),
-          },
-        ]
-      );
-    } else {
-      confirmDeleteUser(user);
-    }
-  };
-
-  const confirmDeleteUser = (user: any) => {
+  const handleDeleteUser = (userToDelete: any) => {
     Alert.alert(
       'Delete User',
-      `Are you sure you want to delete ${user.name}? This action cannot be undone.`,
+      `Are you sure you want to delete ${userToDelete.name}? This action cannot be undone.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -339,10 +322,12 @@ export default function UsersManagementScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              await deleteUser(user.id);
+              await deleteUser(userToDelete.id);
+              await refreshData();
               Alert.alert('Success', 'User deleted successfully!');
-            } catch (error) {
-              // Error is already handled in the DataContext
+            } catch (error: any) {
+              Alert.alert('Error', error?.message || 'Failed to delete user.');
+              console.error('Error deleting user in UI:', error);
             }
           },
         },
@@ -350,50 +335,12 @@ export default function UsersManagementScreen() {
     );
   };
 
-  const openReassignModal = (user: any) => {
-    // Find suitable users for reassignment based on role
-    const suitableUsers = getActiveUsers().filter(u => 
-      u.id !== user.id && 
-      u.is_active && 
-      (u.role === user.role || 
-       (user.role === 'call_operator' && u.role === 'call_operator') ||
-       (user.role === 'technician' && u.role === 'technician') ||
-       (user.role === 'salesman' && u.role === 'salesman'))
-    );
-
-    if (suitableUsers.length === 0) {
-      Alert.alert(
-        'No Suitable Users',
-        'No active users found with the same role for reassignment. Please manually reassign the work first.',
-        [{ text: 'OK' }]
-      );
-      return;
-    }
-
-    // Show user selection modal
-    setSelectedUser(user);
-    setShowReassignModal(true);
-  };
-
-  const handleReassignAndDelete = async (reassignToUserId: string) => {
-    if (!selectedUser) return;
-
+  const handleToggleUserStatus = async (userToToggle: any) => {
     try {
-      await deleteUser(selectedUser.id, reassignToUserId);
-      setShowReassignModal(false);
-      setSelectedUser(null);
-      Alert.alert('Success', 'User deleted and work reassigned successfully!');
+      await toggleUserStatus(userToToggle.id, userToToggle.is_active);
+      Alert.alert('Success', `User ${userToToggle.is_active ? 'deactivated' : 'activated'} successfully!`);
     } catch (error) {
-      // Error is already handled in the DataContext
-    }
-  };
-
-  const handleToggleUserStatus = async (user: any) => {
-    try {
-      await toggleUserStatus(user.id, user.is_active);
-      Alert.alert('Success', `User ${user.is_active ? 'deactivated' : 'activated'} successfully!`);
-    } catch (error) {
-      // Error is already handled in the DataContext
+      console.error('Error toggling user status in UI:', error);
     }
   };
 
@@ -410,9 +357,12 @@ export default function UsersManagementScreen() {
 
   const UserCard = ({ user }: { user: any }) => {
     return (
-      <TouchableOpacity 
+      <TouchableOpacity
         style={styles.userCard}
-        onPress={() => navigateToUserDetails(user.id)}
+        onPress={() => {
+          setSelectedUser(user);
+          setShowUserDetailsModal(true);
+        }}
       >
         <View style={styles.userHeader}>
           <View style={styles.userInfo}>
@@ -428,7 +378,7 @@ export default function UsersManagementScreen() {
           </View>
           <View style={styles.userStatus}>
             <View style={[
-              styles.statusDot, 
+              styles.statusDot,
               { backgroundColor: user.is_active ? '#10B981' : '#EF4444' }
             ]} />
           </View>
@@ -461,8 +411,8 @@ export default function UsersManagementScreen() {
             ) : (
               <UserCheck size={16} color="#10B981" />
             )}
-            <Text style={[styles.actionButtonText, { 
-              color: user.is_active ? '#F59E0B' : '#10B981' 
+            <Text style={[styles.actionButtonText, {
+              color: user.is_active ? '#F59E0B' : '#10B981'
             }]}>
               {user.is_active ? 'Deactivate' : 'Activate'}
             </Text>
@@ -511,97 +461,99 @@ export default function UsersManagementScreen() {
         </View>
       </LinearGradient>
 
-      <View style={styles.statsContainer}>
-        <View style={styles.statsGrid}>
-          <View style={styles.statCard}>
-            <Users size={20} color="#7C3AED" />
-            <Text style={styles.statNumber}>{stats.total}</Text>
-            <Text style={styles.statLabel}>Total Users</Text>
-          </View>
-          <View style={styles.statCard}>
-            <UserCheck size={20} color="#10B981" />
-            <Text style={styles.statNumber}>{stats.active}</Text>
-            <Text style={styles.statLabel}>Active</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Phone size={20} color="#FF6B35" />
-            <Text style={styles.statNumber}>{stats.salesman}</Text>
-            <Text style={styles.statLabel}>Salesmen</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Users size={20} color="#1E40AF" />
-            <Text style={styles.statNumber}>{stats.call_operator}</Text>
-            <Text style={styles.statLabel}>Operators</Text>
-          </View>
-        </View>
-        <View style={styles.statsGrid}>
-          <View style={styles.statCard}>
-            <Users size={20} color="#8B5CF6" />
-            <Text style={styles.statNumber}>{stats.team_lead}</Text>
-            <Text style={styles.statLabel}>Team Leads</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Users size={20} color="#10B981" />
-            <Text style={styles.statNumber}>{stats.technician}</Text>
-            <Text style={styles.statLabel}>Technicians</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Users size={20} color="#EF4444" />
-            <Text style={styles.statNumber}>{stats.super_admin}</Text>
-            <Text style={styles.statLabel}>Admins</Text>
-          </View>
-          <View style={styles.statCard}>
-            <UserX size={20} color="#F59E0B" />
-            <Text style={styles.statNumber}>{stats.total - stats.active}</Text>
-            <Text style={styles.statLabel}>Inactive</Text>
-          </View>
-        </View>
-      </View>
-
-      <View style={styles.searchContainer}>
-        <View style={styles.searchBox}>
-          <Search size={20} color="#64748B" />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search users..."
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-          />
-        </View>
-      </View>
-
-      <View style={styles.filterContainer}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScroll}>
-          <TouchableOpacity
-            style={[styles.filterButton, selectedRole === 'all' && styles.filterButtonActive]}
-            onPress={() => setSelectedRole('all')}
-          >
-            <Text style={[styles.filterText, selectedRole === 'all' && styles.filterTextActive]}>
-              All ({stats.total})
-            </Text>
-          </TouchableOpacity>
-          {Object.entries(roleColors).map(([role]) => {
-            const count = users.filter(u => u.role === role).length;
-            return (
-              <TouchableOpacity
-                key={role}
-                style={[styles.filterButton, selectedRole === role && styles.filterButtonActive]}
-                onPress={() => setSelectedRole(role as UserRole)}
-              >
-                <Text style={[styles.filterText, selectedRole === role && styles.filterTextActive]}>
-                  {role.replace('_', ' ').charAt(0).toUpperCase() + role.replace('_', ' ').slice(1)} ({count})
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
-      </View>
-
       <ScrollView
-        style={styles.content}
+        style={styles.mainScrollView}
+        contentContainerStyle={styles.mainScrollViewContent}
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={isLoading} onRefresh={refreshData} />}
       >
+        <View style={styles.statsContainer}>
+          <View style={styles.statsGrid}>
+            <View style={styles.statCard}>
+              <Users size={20} color="#7C3AED" />
+              <Text style={styles.statNumber}>{stats.total}</Text>
+              <Text style={styles.statLabel}>Total Users</Text>
+            </View>
+            <View style={styles.statCard}>
+              <UserCheck size={20} color="#10B981" />
+              <Text style={styles.statNumber}>{stats.active}</Text>
+              <Text style={styles.statLabel}>Active</Text>
+            </View>
+            <View style={styles.statCard}>
+              <Phone size={20} color="#FF6B35" />
+              <Text style={styles.statNumber}>{stats.salesman}</Text>
+              <Text style={styles.statLabel}>Salesmen</Text>
+            </View>
+            <View style={styles.statCard}>
+              <Users size={20} color="#1E40AF" />
+              <Text style={styles.statNumber}>{stats.call_operator}</Text>
+              <Text style={styles.statLabel}>Operators</Text>
+            </View>
+          </View>
+          <View style={styles.statsGrid}>
+            <View style={styles.statCard}>
+              <Users size={20} color="#8B5CF6" />
+              <Text style={styles.statNumber}>{stats.team_lead}</Text>
+              <Text style={styles.statLabel}>Team Leads</Text>
+            </View>
+            <View style={styles.statCard}>
+              <Users size={20} color="#10B981" />
+              <Text style={styles.statNumber}>{stats.technician}</Text>
+              <Text style={styles.statLabel}>Technicians</Text>
+            </View>
+            <View style={styles.statCard}>
+              <Users size={20} color="#EF4444" />
+              <Text style={styles.statNumber}>{stats.super_admin}</Text>
+              <Text style={styles.statLabel}>Admins</Text>
+            </View>
+            <View style={styles.statCard}>
+              <UserX size={20} color="#F59E0B" />
+              <Text style={styles.statNumber}>{stats.total - stats.active}</Text>
+              <Text style={styles.statLabel}>Inactive</Text>
+            </View>
+          </View>
+        </View>
+
+        <View style={styles.searchContainer}>
+          <View style={styles.searchBox}>
+            <Search size={20} color="#64748B" />
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search users by name, email, or phone..."
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              placeholderTextColor="#64748B"
+            />
+          </View>
+        </View>
+
+        <View style={styles.filterContainer}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScroll}>
+            <TouchableOpacity
+              style={[styles.filterButton, selectedRole === 'all' && styles.filterButtonActive]}
+              onPress={() => setSelectedRole('all')}
+            >
+              <Text style={[styles.filterText, selectedRole === 'all' && styles.filterTextActive]}>
+                All ({stats.total})
+              </Text>
+            </TouchableOpacity>
+            {Object.entries(roleColors).map(([role]) => {
+              const count = users.filter(u => u.role === role).length;
+              return (
+                <TouchableOpacity
+                  key={role}
+                  style={[styles.filterButton, selectedRole === role && styles.filterButtonActive]}
+                  onPress={() => setSelectedRole(role as UserRole)}
+                >
+                  <Text style={[styles.filterText, selectedRole === role && styles.filterTextActive]}>
+                    {role.replace('_', ' ').charAt(0).toUpperCase() + role.replace('_', ' ').slice(1)} ({count})
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        </View>
+
         {filteredUsers.length === 0 ? (
           <View style={styles.emptyState}>
             <Users size={48} color="#CBD5E1" />
@@ -629,47 +581,52 @@ export default function UsersManagementScreen() {
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Add New User</Text>
-            
+
             <View style={styles.formContainer}>
               <TextInput
                 style={styles.input}
                 placeholder="Full Name *"
                 value={newUser.name}
-                onChangeText={(text) => setNewUser({...newUser, name: text})}
+                onChangeText={(text) => setNewUser({ ...newUser, name: text })}
+                placeholderTextColor="#64748B"
               />
-              
+
               <TextInput
                 style={styles.input}
                 placeholder="Email Address *"
                 value={newUser.email}
-                onChangeText={(text) => setNewUser({...newUser, email: text})}
+                onChangeText={(text) => setNewUser({ ...newUser, email: text })}
                 keyboardType="email-address"
                 autoCapitalize="none"
+                placeholderTextColor="#64748B"
               />
-              
+
               <TextInput
                 style={styles.input}
                 placeholder="Password *"
                 value={newUser.password}
-                onChangeText={(text) => setNewUser({...newUser, password: text})}
+                onChangeText={(text) => setNewUser({ ...newUser, password: text })}
                 secureTextEntry
                 autoCapitalize="none"
+                placeholderTextColor="#64748B"
               />
-              
+
               <TextInput
                 style={styles.input}
                 placeholder="Phone Number *"
                 value={newUser.phone}
-                onChangeText={(text) => setNewUser({...newUser, phone: text})}
+                onChangeText={(text) => setNewUser({ ...newUser, phone: text })}
                 keyboardType="phone-pad"
+                placeholderTextColor="#64748B"
               />
 
               <Text style={styles.roleLabel}>Role</Text>
-              <View style={{ backgroundColor: '#F8FAFC', borderRadius: 8, borderWidth: 1, borderColor: '#E2E8F0', marginBottom: 16 }}>
+              <View style={styles.pickerContainer}>
                 <Picker
                   selectedValue={newUser.role}
                   onValueChange={(itemValue) => setNewUser({ ...newUser, role: itemValue as UserRole })}
-                  style={{ height: 48 }}
+                  style={styles.pickerStyle}
+                  itemStyle={styles.pickerItemStyle}
                 >
                   {Object.keys(roleColors).map((role) => (
                     <Picker.Item
@@ -710,48 +667,52 @@ export default function UsersManagementScreen() {
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Edit User</Text>
-            
+
             <View style={styles.formContainer}>
               <TextInput
                 style={styles.input}
                 placeholder="Full Name *"
                 value={selectedUser?.name || ''}
-                onChangeText={(text) => setSelectedUser({...selectedUser, name: text})}
+                onChangeText={(text) => setSelectedUser({ ...selectedUser, name: text })}
+                placeholderTextColor="#64748B"
               />
-              
+
               <TextInput
                 style={styles.input}
                 placeholder="Email Address *"
                 value={selectedUser?.email || ''}
-                onChangeText={(text) => setSelectedUser({...selectedUser, email: text})}
+                onChangeText={(text) => setSelectedUser({ ...selectedUser, email: text })}
                 keyboardType="email-address"
                 autoCapitalize="none"
+                placeholderTextColor="#64748B"
               />
-              
+
               <TextInput
                 style={styles.input}
                 placeholder="Phone Number *"
                 value={selectedUser?.phone || ''}
-                onChangeText={(text) => setSelectedUser({...selectedUser, phone: text})}
+                onChangeText={(text) => setSelectedUser({ ...selectedUser, phone: text })}
                 keyboardType="phone-pad"
+                placeholderTextColor="#64748B"
               />
 
-              {/* Password field for editing user password */}
               <TextInput
                 style={styles.input}
                 placeholder="Change Password (leave blank to keep current)"
                 value={selectedUser?.password || ''}
-                onChangeText={(text) => setSelectedUser({...selectedUser, password: text})}
+                onChangeText={(text) => setSelectedUser({ ...selectedUser, password: text })}
                 secureTextEntry
                 autoCapitalize="none"
+                placeholderTextColor="#64748B"
               />
 
               <Text style={styles.roleLabel}>Role</Text>
-              <View style={{ backgroundColor: '#F8FAFC', borderRadius: 8, borderWidth: 1, borderColor: '#E2E8F0', marginBottom: 16 }}>
+              <View style={styles.pickerContainer}>
                 <Picker
                   selectedValue={selectedUser?.role}
                   onValueChange={(itemValue) => setSelectedUser({ ...selectedUser, role: itemValue as UserRole })}
-                  style={{ height: 48 }}
+                  style={styles.pickerStyle}
+                  itemStyle={styles.pickerItemStyle}
                 >
                   {Object.keys(roleColors).map((role) => (
                     <Picker.Item
@@ -782,7 +743,7 @@ export default function UsersManagementScreen() {
         </View>
       </Modal>
 
-      {/* User Details Modal */}
+      {/* User Details Modal (Laptop Web View Optimized) */}
       <Modal
         visible={showUserDetailsModal}
         transparent
@@ -790,206 +751,238 @@ export default function UsersManagementScreen() {
         onRequestClose={() => setShowUserDetailsModal(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>User Details</Text>
-            
+          <View style={[styles.modalContentWeb, { maxWidth: width * 0.7, minWidth: 700 }]}>
             {selectedUser && (
-              <View style={styles.userDetailsContainer}>
-                {/* User Header */}
-                <View style={styles.userDetailsHeader}>
-                  <View style={styles.userDetailsAvatar}>
-                    <Text style={styles.userDetailsAvatarText}>
-                      {selectedUser.name.split(' ').map((n: string) => n[0]).join('')}
-                    </Text>
-                  </View>
-                  <View style={styles.userDetailsInfo}>
-                    <Text style={styles.userDetailsName}>{selectedUser.name}</Text>
-                    <RoleBadge role={selectedUser.role} />
-                    <Text style={styles.userDetailsEmail}>{selectedUser.email}</Text>
-                    <Text style={styles.userDetailsPhone}>{selectedUser.phone}</Text>
-                  </View>
+              <ScrollView showsVerticalScrollIndicator={false}>
+                <View style={styles.modalHeaderWeb}>
+                  <Text style={styles.modalTitleWeb}>User Details</Text>
+                  <TouchableOpacity
+                    style={styles.closeIconButtonWeb}
+                    onPress={() => setShowUserDetailsModal(false)}
+                  >
+                    <X size={20} color="#64748B" />
+                  </TouchableOpacity>
                 </View>
 
-                {/* Work Analytics Section */}
-                <View style={styles.workAnalyticsSection}>
-                  <View style={styles.sectionHeader}>
-                    <Text style={styles.sectionTitle}>Work Analytics</Text>
-                    <TouchableOpacity
-                      style={styles.analyticsButton}
-                      onPress={() => {
-                        setShowUserDetailsModal(false);
-                        setShowAnalyticsModal(true);
-                      }}
-                    >
-                      <BarChart3 size={16} color="#3B82F6" />
-                      <Text style={styles.analyticsButtonText}>Detailed View</Text>
-                    </TouchableOpacity>
+                <View style={styles.userDetailsSectionWeb}>
+                  <View style={styles.userDetailsHeaderWeb}>
+                    <View style={styles.userDetailsAvatarWeb}>
+                      <Text style={styles.userDetailsAvatarText}>
+                        {selectedUser.name.split(' ').map((n: string) => n[0]).join('')}
+                      </Text>
+                    </View>
+                    <View style={styles.userDetailsInfoWeb}>
+                      <Text style={styles.userDetailsNameWeb}>{selectedUser.name}</Text>
+                      <RoleBadge role={selectedUser.role} />
+                      <Text style={styles.userDetailsEmailWeb}>{selectedUser.email}</Text>
+                      <Text style={styles.userDetailsPhoneWeb}>{selectedUser.phone}</Text>
+                    </View>
                   </View>
 
-                  {/* Today's Performance */}
-                  <View style={styles.performanceCard}>
-                    <Text style={styles.performanceTitle}>Today's Performance</Text>
-                    {(() => {
-                      const workStats = getUserWorkStatistics(selectedUser, 'daily');
-                      switch (selectedUser.role) {
-                        case 'salesman':
-                          return (
-                            <View style={styles.workStatsBackground}>
-                              <View style={styles.workStatsRow}>
-                                <View style={styles.workStatCard}>
-                                  <Text style={styles.workStatNumber}>{workStats.periodWork}</Text>
-                                  <Text style={styles.workStatLabel}>Leads Generated</Text>
-                                </View>
-                                <View style={styles.workStatCard}>
-                                  <Text style={styles.workStatNumber}>{workStats.periodCompleted}</Text>
-                                  <Text style={styles.workStatLabel}>Converted</Text>
-                                </View>
-                              </View>
-                              <View style={styles.workStatsRowLast}>
-                                <View style={styles.workStatCard}>
-                                  <Text style={styles.workStatNumber}>{workStats.periodConversionRate}%</Text>
-                                  <Text style={styles.workStatLabel}>Today's Rate</Text>
-                                </View>
-                                <View style={styles.workStatCard}>
-                                  <Text style={styles.workStatNumber}>{workStats.conversionRate}%</Text>
-                                  <Text style={styles.workStatLabel}>Overall Rate</Text>
-                                </View>
-                              </View>
-                            </View>
-                          );
-                        
-                        case 'call_operator':
-                          return (
-                            <View style={styles.workStatsBackground}>
-                              <View style={styles.workStatsRow}>
-                                <View style={styles.workStatCard}>
-                                  <Text style={styles.workStatNumber}>{workStats.periodWork}</Text>
-                                  <Text style={styles.workStatLabel}>Calls Made</Text>
-                                </View>
-                                <View style={styles.workStatCard}>
-                                  <Text style={styles.workStatNumber}>{workStats.periodCompleted}</Text>
-                                  <Text style={styles.workStatLabel}>Successful</Text>
-                                </View>
-                              </View>
-                              <View style={styles.workStatsRowLast}>
-                                <View style={styles.workStatCard}>
-                                  <Text style={styles.workStatNumber}>{workStats.periodConversionRate}%</Text>
-                                  <Text style={styles.workStatLabel}>Success Rate</Text>
-                                </View>
-                                <View style={styles.workStatCard}>
-                                  <Text style={styles.workStatNumber}>{workStats.conversionRate}%</Text>
-                                  <Text style={styles.workStatLabel}>Overall Rate</Text>
-                                </View>
-                              </View>
-                            </View>
-                          );
-                        
-                        case 'technician':
-                          return (
-                            <View style={styles.workStatsBackground}>
-                              <View style={styles.workStatsRow}>
-                                <View style={styles.workStatCard}>
-                                  <Text style={styles.workStatNumber}>{workStats.periodWork}</Text>
-                                  <Text style={styles.workStatLabel}>Site Visits</Text>
-                                </View>
-                                <View style={styles.workStatCard}>
-                                  <Text style={styles.workStatNumber}>{workStats.periodCompleted}</Text>
-                                  <Text style={styles.workStatLabel}>Completed</Text>
-                                </View>
-                              </View>
-                              <View style={styles.workStatsRowLast}>
-                                <View style={styles.workStatCard}>
-                                  <Text style={styles.workStatNumber}>{workStats.periodConversionRate}%</Text>
-                                  <Text style={styles.workStatLabel}>Completion Rate</Text>
-                                </View>
-                                <View style={styles.workStatCard}>
-                                  <Text style={styles.workStatNumber}>{workStats.conversionRate}%</Text>
-                                  <Text style={styles.workStatLabel}>Overall Rate</Text>
-                                </View>
-                              </View>
-                            </View>
-                          );
-                        
-                        case 'team_lead':
-                          return (
-                            <View style={styles.workStatsBackground}>
-                              <View style={styles.workStatsRow}>
-                                <View style={styles.workStatCard}>
-                                  <Text style={styles.workStatNumber}>{workStats.teamMembers || 0}</Text>
-                                  <Text style={styles.workStatLabel}>Team Members</Text>
-                                </View>
-                                <View style={styles.workStatCard}>
-                                  <Text style={styles.workStatNumber}>{workStats.periodWork}</Text>
-                                  <Text style={styles.workStatLabel}>Leads Managed</Text>
-                                </View>
-                              </View>
-                              <View style={styles.workStatsRowLast}>
-                                <View style={styles.workStatCard}>
-                                  <Text style={styles.workStatNumber}>{workStats.totalWork}</Text>
-                                  <Text style={styles.workStatLabel}>Total Managed</Text>
-                                </View>
-                                <View style={styles.workStatCard}>
-                                  <Text style={styles.workStatNumber}>-</Text>
-                                  <Text style={styles.workStatLabel}>Team Performance</Text>
-                                </View>
-                              </View>
-                            </View>
-                          );
-                        
-                        default:
-                          return (
-                            <View style={styles.workStatsBackground}>
-                              <View style={styles.workStatsRow}>
-                                <View style={styles.workStatCard}>
-                                  <Text style={styles.workStatNumber}>0</Text>
-                                  <Text style={styles.workStatLabel}>No Data</Text>
-                                </View>
-                              </View>
-                            </View>
-                          );
-                      }
-                    })()}
-                  </View>
+                  <View style={styles.workAnalyticsSectionWeb}>
+                    <View style={styles.sectionHeaderWeb}>
+                      <Text style={styles.sectionTitleWeb}>Work Analytics</Text>
+                      <TouchableOpacity
+                        style={styles.analyticsButtonWeb}
+                        onPress={() => {
+                          setShowUserDetailsModal(false);
+                          setShowAnalyticsModal(true);
+                        }}
+                      >
+                        <BarChart3 size={16} color="#3B82F6" />
+                        <Text style={styles.analyticsButtonTextWeb}>Detailed View</Text>
+                      </TouchableOpacity>
+                    </View>
 
-                  {/* Weekly & Monthly Summary */}
-                  <View style={styles.summarySection}>
-                    <Text style={styles.summaryTitle}>Performance Summary</Text>
-                    <View style={styles.summaryGrid}>
-                      <View style={styles.summaryCard}>
-                        <Text style={styles.summaryLabel}>This Week</Text>
-                        <Text style={styles.summaryNumber}>
-                          {getUserWorkStatistics(selectedUser, 'weekly').periodWork}
-                        </Text>
-                        <Text style={styles.summarySubtext}>
-                          {getWorkLabel(selectedUser.role, 'weekly')}
-                        </Text>
-                      </View>
-                      <View style={styles.summaryCard}>
-                        <Text style={styles.summaryLabel}>This Month</Text>
-                        <Text style={styles.summaryNumber}>
-                          {getUserWorkStatistics(selectedUser, 'monthly').periodWork}
-                        </Text>
-                        <Text style={styles.summarySubtext}>
-                          {getWorkLabel(selectedUser.role, 'monthly')}
-                        </Text>
+                    <View style={styles.performanceCardWeb}>
+                      <Text style={styles.performanceTitleWeb}>Today's Performance</Text>
+                      {(() => {
+                        const workStats = getUserWorkStatistics(selectedUser, 'daily');
+                        switch (selectedUser.role) {
+                          case 'salesman':
+                            return (
+                              <View style={styles.workStatsBackgroundWeb}>
+                                <View style={styles.workStatsRowWeb}>
+                                  <View style={styles.workStatCardWeb}>
+                                    <Text style={styles.workStatNumberWeb}>{workStats.periodWork}</Text>
+                                    <Text style={styles.workStatLabelWeb}>Leads Generated</Text>
+                                  </View>
+                                  <View style={styles.workStatCardWeb}>
+                                    <Text style={styles.workStatNumberWeb}>{workStats.periodCompleted}</Text>
+                                    <Text style={styles.workStatLabelWeb}>Converted</Text>
+                                  </View>
+                                </View>
+                                <View style={styles.workStatsRowWeb}>
+                                  <View style={styles.workStatCardWeb}>
+                                    <Text style={styles.workStatNumberWeb}>{workStats.periodConversionRate}%</Text>
+                                    <Text style={styles.workStatLabelWeb}>Today's Rate</Text>
+                                  </View>
+                                  <View style={styles.workStatCardWeb}>
+                                    <Text style={styles.workStatNumberWeb}>{workStats.conversionRate}%</Text>
+                                    <Text style={styles.workStatLabelWeb}>Overall Rate</Text>
+                                  </View>
+                                </View>
+                              </View>
+                            );
+
+                          case 'call_operator':
+                            return (
+                              <View style={styles.workStatsBackgroundWeb}>
+                                <View style={styles.workStatsRowWeb}>
+                                  <View style={styles.workStatCardWeb}>
+                                    <Text style={styles.workStatNumberWeb}>{workStats.periodWork}</Text>
+                                    <Text style={styles.workStatLabelWeb}>Calls Made</Text>
+                                  </View>
+                                  <View style={styles.workStatCardWeb}>
+                                    <Text style={styles.workStatNumberWeb}>{workStats.periodCompleted}</Text>
+                                    <Text style={styles.workStatLabelWeb}>Successful</Text>
+                                  </View>
+                                </View>
+                                <View style={styles.workStatsRowWeb}>
+                                  <View style={styles.workStatCardWeb}>
+                                    <Text style={styles.workStatNumberWeb}>{workStats.periodConversionRate}%</Text>
+                                    <Text style={styles.workStatLabelWeb}>Success Rate</Text>
+                                  </View>
+                                  <View style={styles.workStatCardWeb}>
+                                    <Text style={styles.workStatNumberWeb}>{workStats.conversionRate}%</Text>
+                                    <Text style={styles.workStatLabelWeb}>Overall Rate</Text>
+                                  </View>
+                                </View>
+                              </View>
+                            );
+
+                          case 'technician':
+                            return (
+                              <View style={styles.workStatsBackgroundWeb}>
+                                <View style={styles.workStatsRowWeb}>
+                                  <View style={styles.workStatCardWeb}>
+                                    <Text style={styles.workStatNumberWeb}>{workStats.periodWork}</Text>
+                                    <Text style={styles.workStatLabelWeb}>Site Visits</Text>
+                                  </View>
+                                  <View style={styles.workStatCardWeb}>
+                                    <Text style={styles.workStatNumberWeb}>{workStats.periodCompleted}</Text>
+                                    <Text style={styles.workStatLabelWeb}>Completed</Text>
+                                  </View>
+                                </View>
+                                <View style={styles.workStatsRowWeb}>
+                                  <View style={styles.workStatCardWeb}>
+                                    <Text style={styles.workStatNumberWeb}>{workStats.periodConversionRate}%</Text>
+                                    <Text style={styles.workStatLabelWeb}>Completion Rate</Text>
+                                  </View>
+                                  <View style={styles.workStatCardWeb}>
+                                    <Text style={styles.workStatNumberWeb}>{workStats.conversionRate}%</Text>
+                                    <Text style={styles.workStatLabelWeb}>Overall Rate</Text>
+                                  </View>
+                                </View>
+                              </View>
+                            );
+
+                          case 'team_lead':
+                            return (
+                              <View style={styles.workStatsBackgroundWeb}>
+                                <View style={styles.workStatsRowWeb}>
+                                  <View style={styles.workStatCardWeb}>
+                                    <Text style={styles.workStatNumberWeb}>{workStats.teamMembers || 0}</Text>
+                                    <Text style={styles.workStatLabelWeb}>Team Members</Text>
+                                  </View>
+                                  <View style={styles.workStatCardWeb}>
+                                    <Text style={styles.workStatNumberWeb}>{workStats.periodWork}</Text>
+                                    <Text style={styles.workStatLabelWeb}>Leads Managed</Text>
+                                  </View>
+                                </View>
+                                <View style={styles.workStatsRowWeb}>
+                                  <View style={styles.workStatCardWeb}>
+                                    <Text style={styles.workStatNumberWeb}>{workStats.totalWork}</Text>
+                                    <Text style={styles.workStatLabelWeb}>Total Managed</Text>
+                                  </View>
+                                  <View style={styles.workStatCardWeb}>
+                                    <Text style={styles.workStatNumberWeb}>-</Text>
+                                    <Text style={styles.workStatLabelWeb}>Team Performance</Text>
+                                  </View>
+                                </View>
+                              </View>
+                            );
+
+                            case 'super_admin':
+                                return (
+                                  <View style={styles.workStatsBackgroundWeb}>
+                                    <View style={styles.workStatsRowWeb}>
+                                      <View style={styles.workStatCardWeb}>
+                                        <Text style={styles.workStatNumberWeb}>{workStats.periodWork}</Text>
+                                        <Text style={styles.workStatLabelWeb}>System Leads</Text>
+                                      </View>
+                                      <View style={styles.workStatCardWeb}>
+                                        <Text style={styles.workStatNumberWeb}>{workStats.periodCompleted}</Text>
+                                        <Text style={styles.workStatLabelWeb}>Converted</Text>
+                                      </View>
+                                    </View>
+                                    <View style={styles.workStatsRowWeb}>
+                                      <View style={styles.workStatCardWeb}>
+                                        <Text style={styles.workStatNumberWeb}>{workStats.periodConversionRate}%</Text>
+                                        <Text style={styles.workStatLabelWeb}>Conversion Rate</Text>
+                                      </View>
+                                      <View style={styles.workStatCardWeb}>
+                                        <Text style={styles.workStatNumberWeb}>{workStats.conversionRate}%</Text>
+                                        <Text style={styles.workStatLabelWeb}>Overall Rate</Text>
+                                      </View>
+                                    </View>
+                                  </View>
+                                );
+
+                          default:
+                            return (
+                              <View style={styles.workStatsBackgroundWeb}>
+                                <View style={styles.workStatsRowWeb}>
+                                  <View style={styles.workStatCardWeb}>
+                                    <Text style={styles.workStatNumberWeb}>0</Text>
+                                    <Text style={styles.workStatLabelWeb}>No Data</Text>
+                                  </View>
+                                </View>
+                              </View>
+                            );
+                        }
+                      })()}
+                    </View>
+
+                    <View style={styles.summarySectionWeb}>
+                      <Text style={styles.summaryTitleWeb}>Performance Summary</Text>
+                      <View style={styles.summaryGridWeb}>
+                        <View style={styles.summaryCardWeb}>
+                          <Text style={styles.summaryLabelWeb}>This Week</Text>
+                          <Text style={styles.summaryNumberWeb}>
+                            {getUserWorkStatistics(selectedUser, 'weekly').periodWork}
+                          </Text>
+                          <Text style={styles.summarySubtextWeb}>
+                            {getWorkLabel(selectedUser.role, 'weekly')}
+                          </Text>
+                        </View>
+                        <View style={styles.summaryCardWeb}>
+                          <Text style={styles.summaryLabelWeb}>This Month</Text>
+                          <Text style={styles.summaryNumberWeb}>
+                            {getUserWorkStatistics(selectedUser, 'monthly').periodWork}
+                          </Text>
+                          <Text style={styles.summarySubtextWeb}>
+                            {getWorkLabel(selectedUser.role, 'monthly')}
+                          </Text>
+                        </View>
                       </View>
                     </View>
                   </View>
                 </View>
-              </View>
+              </ScrollView>
             )}
 
             <TouchableOpacity
-              style={styles.closeButton}
+              style={styles.closeButtonWeb}
               onPress={() => setShowUserDetailsModal(false)}
             >
-              <Text style={styles.closeButtonText}>Close</Text>
+              <Text style={styles.closeButtonTextWeb}>Close</Text>
             </TouchableOpacity>
           </View>
         </View>
       </Modal>
 
-      {/* Analytics Modal */}
+      {/* Analytics Modal (Laptop Web View Optimized) */}
       <Modal
         visible={showAnalyticsModal}
         transparent
@@ -997,11 +990,11 @@ export default function UsersManagementScreen() {
         onRequestClose={() => setShowAnalyticsModal(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { maxWidth: 500 }]}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Work Analytics</Text>
+          <View style={[styles.modalContentWeb, { maxWidth: width * 0.7, minWidth: 700 }]}>
+            <View style={styles.modalHeaderWeb}>
+              <Text style={styles.modalTitleWeb}>Work Analytics</Text>
               <TouchableOpacity
-                style={styles.closeIconButton}
+                style={styles.closeIconButtonWeb}
                 onPress={() => setShowAnalyticsModal(false)}
               >
                 <X size={20} color="#64748B" />
@@ -1010,48 +1003,46 @@ export default function UsersManagementScreen() {
 
             <ScrollView showsVerticalScrollIndicator={false}>
               {selectedUser && (
-                <View style={styles.analyticsContainer}>
-                  {/* User Info Header */}
-                  <View style={styles.analyticsUserHeader}>
-                    <View style={styles.analyticsUserAvatar}>
+                <View style={styles.analyticsContainerWeb}>
+                  <View style={styles.analyticsUserHeaderWeb}>
+                    <View style={styles.analyticsUserAvatarWeb}>
                       <Text style={styles.analyticsUserAvatarText}>
                         {selectedUser.name.split(' ').map((n: string) => n[0]).join('')}
                       </Text>
                     </View>
-                    <View style={styles.analyticsUserInfo}>
-                      <Text style={styles.analyticsUserName}>{selectedUser.name}</Text>
+                    <View style={styles.analyticsUserInfoWeb}>
+                      <Text style={styles.analyticsUserNameWeb}>{selectedUser.name}</Text>
                       <RoleBadge role={selectedUser.role} />
-                      <Text style={styles.analyticsUserEmail}>{selectedUser.email}</Text>
+                      <Text style={styles.analyticsUserEmailWeb}>{selectedUser.email}</Text>
                     </View>
                   </View>
 
-                  {/* Period Tabs */}
-                  <View style={styles.periodTabs}>
+                  <View style={styles.periodTabsWeb}>
                     {(['daily', 'weekly', 'monthly'] as const).map((period) => {
                       const stats = getUserWorkStatistics(selectedUser, period);
                       const periodLabel = period === 'daily' ? 'Today' : period === 'weekly' ? 'This Week' : 'This Month';
-                      
+
                       return (
-                        <View key={period} style={styles.periodTab}>
-                          <Text style={styles.periodTabTitle}>{periodLabel}</Text>
-                          
-                          <View style={styles.periodStatsGrid}>
-                            <View style={styles.periodStatCard}>
+                        <View key={period} style={styles.periodTabWeb}>
+                          <Text style={styles.periodTabTitleWeb}>{periodLabel}</Text>
+
+                          <View style={styles.periodStatsGridWeb}>
+                            <View style={styles.periodStatCardWeb}>
                               <Activity size={20} color="#F59E0B" />
-                              <Text style={styles.periodStatNumber}>{stats.periodWork}</Text>
-                              <Text style={styles.periodStatLabel}>{getWorkLabel(selectedUser.role, period)}</Text>
+                              <Text style={styles.periodStatNumberWeb}>{stats.periodWork}</Text>
+                              <Text style={styles.periodStatLabelWeb}>{getWorkLabel(selectedUser.role, period)}</Text>
                             </View>
-                            
-                            <View style={styles.periodStatCard}>
+
+                            <View style={styles.periodStatCardWeb}>
                               <CheckCircle size={20} color="#10B981" />
-                              <Text style={styles.periodStatNumber}>{stats.periodCompleted}</Text>
-                              <Text style={styles.periodStatLabel}>{getCompletedLabel(selectedUser.role)}</Text>
+                              <Text style={styles.periodStatNumberWeb}>{stats.periodCompleted}</Text>
+                              <Text style={styles.periodStatLabelWeb}>{getCompletedLabel(selectedUser.role)}</Text>
                             </View>
-                            
-                            <View style={styles.periodStatCard}>
+
+                            <View style={styles.periodStatCardWeb}>
                               <Target size={20} color="#8B5CF6" />
-                              <Text style={styles.periodStatNumber}>{stats.periodConversionRate}%</Text>
-                              <Text style={styles.periodStatLabel}>{periodLabel}'s Rate</Text>
+                              <Text style={styles.periodStatNumberWeb}>{stats.periodConversionRate}%</Text>
+                              <Text style={styles.periodStatLabelWeb}>{periodLabel}'s Rate</Text>
                             </View>
                           </View>
                         </View>
@@ -1059,121 +1050,136 @@ export default function UsersManagementScreen() {
                     })}
                   </View>
 
-                  {/* Overall Statistics */}
-                  <View style={styles.overallStatsSection}>
-                    <Text style={styles.overallStatsTitle}>Overall Performance</Text>
-                    <View style={styles.overallStatsGrid}>
-                      <View style={styles.overallStatCard}>
+                  <View style={styles.overallStatsSectionWeb}>
+                    <Text style={styles.overallStatsTitleWeb}>Overall Performance</Text>
+                    <View style={styles.overallStatsGridWeb}>
+                      <View style={styles.overallStatCardWeb}>
                         <TrendingUp size={20} color="#EF4444" />
-                        <Text style={styles.overallStatNumber}>
+                        <Text style={styles.overallStatNumberWeb}>
                           {getUserWorkStatistics(selectedUser, 'monthly').totalWork}
                         </Text>
-                        <Text style={styles.overallStatLabel}>Total Work</Text>
+                        <Text style={styles.overallStatLabelWeb}>Total Work</Text>
                       </View>
-                      
-                      <View style={styles.overallStatCard}>
+
+                      <View style={styles.overallStatCardWeb}>
                         <CheckCircle size={20} color="#10B981" />
-                        <Text style={styles.overallStatNumber}>
+                        <Text style={styles.overallStatNumberWeb}>
                           {getUserWorkStatistics(selectedUser, 'monthly').totalCompleted}
                         </Text>
-                        <Text style={styles.overallStatLabel}>Total Completed</Text>
+                        <Text style={styles.overallStatLabelWeb}>Total Completed</Text>
                       </View>
-                      
-                      <View style={styles.overallStatCard}>
+
+                      <View style={styles.overallStatCardWeb}>
                         <Target size={20} color="#8B5CF6" />
-                        <Text style={styles.overallStatNumber}>
+                        <Text style={styles.overallStatNumberWeb}>
                           {getUserWorkStatistics(selectedUser, 'monthly').conversionRate}%
                         </Text>
-                        <Text style={styles.overallStatLabel}>Overall Rate</Text>
+                        <Text style={styles.overallStatLabelWeb}>Overall Rate</Text>
                       </View>
                     </View>
                   </View>
 
-                  {/* Role-specific Insights */}
-                  <View style={styles.insightsSection}>
-                    <Text style={styles.insightsTitle}>Performance Insights</Text>
+                  <View style={styles.insightsSectionWeb}>
+                    <Text style={styles.insightsTitleWeb}>Performance Insights</Text>
                     {(() => {
                       const dailyStats = getUserWorkStatistics(selectedUser, 'daily');
-                      const weeklyStats = getUserWorkStatistics(selectedUser, 'weekly');
                       const monthlyStats = getUserWorkStatistics(selectedUser, 'monthly');
-                      
+
                       switch (selectedUser.role) {
                         case 'salesman':
                           return (
-                            <View style={styles.insightsContent}>
-                              <Text style={styles.insightText}>
+                            <View style={styles.insightsContentWeb}>
+                              <Text style={styles.insightTextWeb}>
                                 • {dailyStats.periodWork} leads generated today
                               </Text>
-                              <Text style={styles.insightText}>
+                              <Text style={styles.insightTextWeb}>
                                 • {dailyStats.periodCompleted} leads converted to customers today
                               </Text>
-                              <Text style={styles.insightText}>
+                              <Text style={styles.insightTextWeb}>
                                 • {dailyStats.periodConversionRate}% conversion rate today
                               </Text>
-                              <Text style={styles.insightText}>
+                              <Text style={styles.insightTextWeb}>
                                 • {monthlyStats.totalWork} total leads in the last month
                               </Text>
                             </View>
                           );
-                        
+
                         case 'call_operator':
                           return (
-                            <View style={styles.insightsContent}>
-                              <Text style={styles.insightText}>
+                            <View style={styles.insightsContentWeb}>
+                              <Text style={styles.insightTextWeb}>
                                 • {dailyStats.periodWork} calls made today
                               </Text>
-                              <Text style={styles.insightText}>
+                              <Text style={styles.insightTextWeb}>
                                 • {dailyStats.periodCompleted} calls resulted in conversions
                               </Text>
-                              <Text style={styles.insightText}>
+                              <Text style={styles.insightTextWeb}>
                                 • {dailyStats.periodConversionRate}% call success rate today
                               </Text>
-                              <Text style={styles.insightText}>
+                              <Text style={styles.insightTextWeb}>
                                 • {monthlyStats.totalWork} total calls in the last month
                               </Text>
                             </View>
                           );
-                        
+
                         case 'technician':
                           return (
-                            <View style={styles.insightsContent}>
-                              <Text style={styles.insightText}>
+                            <View style={styles.insightsContentWeb}>
+                              <Text style={styles.insightTextWeb}>
                                 • {dailyStats.periodWork} site visits today
                               </Text>
-                              <Text style={styles.insightText}>
+                              <Text style={styles.insightTextWeb}>
                                 • {dailyStats.periodCompleted} installations completed today
                               </Text>
-                              <Text style={styles.insightText}>
+                              <Text style={styles.insightTextWeb}>
                                 • {dailyStats.periodConversionRate}% completion rate today
                               </Text>
-                              <Text style={styles.insightText}>
+                              <Text style={styles.insightTextWeb}>
                                 • {monthlyStats.totalWork} total visits in the last month
                               </Text>
                             </View>
                           );
-                        
+
                         case 'team_lead':
                           return (
-                            <View style={styles.insightsContent}>
-                              <Text style={styles.insightText}>
+                            <View style={styles.insightsContentWeb}>
+                              <Text style={styles.insightTextWeb}>
                                 • Managing {dailyStats.teamMembers} team members
                               </Text>
-                              <Text style={styles.insightText}>
+                              <Text style={styles.insightTextWeb}>
                                 • {dailyStats.periodWork} leads managed today
                               </Text>
-                              <Text style={styles.insightText}>
+                              <Text style={styles.insightTextWeb}>
                                 • {monthlyStats.totalWork} total leads managed this month
                               </Text>
-                              <Text style={styles.insightText}>
+                              <Text style={styles.insightTextWeb}>
                                 • Team performance monitoring active
                               </Text>
                             </View>
                           );
-                        
+
+                        case 'super_admin':
+                            return (
+                                <View style={styles.insightsContentWeb}>
+                                    <Text style={styles.insightTextWeb}>
+                                        • {dailyStats.periodWork} system leads generated today
+                                    </Text>
+                                    <Text style={styles.insightTextWeb}>
+                                        • {dailyStats.periodCompleted} system leads converted today
+                                    </Text>
+                                    <Text style={styles.insightTextWeb}>
+                                        • {dailyStats.periodConversionRate}% system conversion rate today
+                                    </Text>
+                                    <Text style={styles.insightTextWeb}>
+                                        • {monthlyStats.totalWork} total system leads in the last month
+                                    </Text>
+                                </View>
+                            );
+
                         default:
                           return (
-                            <View style={styles.insightsContent}>
-                              <Text style={styles.insightText}>No specific insights available for this role.</Text>
+                            <View style={styles.insightsContentWeb}>
+                              <Text style={styles.insightTextWeb}>No specific insights available for this role.</Text>
                             </View>
                           );
                       }
@@ -1184,81 +1190,11 @@ export default function UsersManagementScreen() {
             </ScrollView>
 
             <TouchableOpacity
-              style={styles.closeButton}
+              style={styles.closeButtonWeb}
               onPress={() => setShowAnalyticsModal(false)}
             >
-              <Text style={styles.closeButtonText}>Close</Text>
+              <Text style={styles.closeButtonTextWeb}>Close</Text>
             </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-
-      {/* Reassign User Work Modal */}
-      <Modal
-        visible={showReassignModal}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setShowReassignModal(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Reassign User Work</Text>
-              <TouchableOpacity
-                style={styles.closeIconButton}
-                onPress={() => setShowReassignModal(false)}
-              >
-                <X size={20} color="#64748B" />
-              </TouchableOpacity>
-            </View>
-            
-            <Text style={styles.modalSubtitle}>
-              {selectedUser ? `Select a user to reassign ${selectedUser.name}'s work to:` : ''}
-            </Text>
-
-            <ScrollView style={styles.reassignUserList}>
-              {selectedUser && getActiveUsers()
-                .filter(u => 
-                  u.id !== selectedUser.id && 
-                  u.is_active && 
-                  (u.role === selectedUser.role || 
-                   (selectedUser.role === 'call_operator' && u.role === 'call_operator') ||
-                   (selectedUser.role === 'technician' && u.role === 'technician') ||
-                   (selectedUser.role === 'salesman' && u.role === 'salesman'))
-                )
-                .map((reassignUser) => (
-                  <TouchableOpacity
-                    key={reassignUser.id}
-                    style={styles.reassignUserItem}
-                    onPress={() => handleReassignAndDelete(reassignUser.id)}
-                  >
-                    <View style={styles.reassignUserInfo}>
-                      <View style={styles.reassignUserAvatar}>
-                        <Text style={styles.reassignUserAvatarText}>
-                          {reassignUser.name.split(' ').map((n: string) => n[0]).join('')}
-                        </Text>
-                      </View>
-                      <View style={styles.reassignUserDetails}>
-                        <Text style={styles.reassignUserName}>{reassignUser.name}</Text>
-                        <Text style={styles.reassignUserRole}>{reassignUser.role.replace('_', ' ')}</Text>
-                        <Text style={styles.reassignUserEmail}>{reassignUser.email}</Text>
-                      </View>
-                    </View>
-                    <View style={styles.reassignUserAction}>
-                      <Text style={styles.reassignUserActionText}>Select</Text>
-                    </View>
-                  </TouchableOpacity>
-                ))}
-            </ScrollView>
-
-            <View style={styles.modalActions}>
-              <TouchableOpacity
-                style={styles.cancelButton}
-                onPress={() => setShowReassignModal(false)}
-              >
-                <Text style={styles.cancelButtonText}>Cancel</Text>
-              </TouchableOpacity>
-            </View>
           </View>
         </View>
       </Modal>
@@ -1294,12 +1230,12 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     fontSize: 24,
-    fontFamily: 'Inter-Bold',
+    fontWeight: 'bold',
     color: '#FFFFFF',
   },
   headerSubtitle: {
     fontSize: 14,
-    fontFamily: 'Inter-Regular',
+    fontWeight: 'normal',
     color: '#FFFFFF',
     opacity: 0.9,
   },
@@ -1311,9 +1247,17 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  mainScrollView: {
+    flex: 1,
+  },
+  mainScrollViewContent: {
+    paddingHorizontal: 20,
+    paddingBottom: 24,
+    paddingTop: 0,
+  },
   statsContainer: {
     backgroundColor: '#FFFFFF',
-    margin: 20,
+    marginVertical: 20,
     borderRadius: 16,
     padding: 16,
     shadowColor: '#000',
@@ -1328,25 +1272,27 @@ const styles = StyleSheet.create({
   statsGrid: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    marginBottom: 12,
   },
   statCard: {
     alignItems: 'center',
     flex: 1,
+    paddingHorizontal: 4,
   },
   statNumber: {
     fontSize: 18,
-    fontFamily: 'Inter-Bold',
+    fontWeight: 'bold',
     color: '#1E293B',
     marginTop: 8,
   },
   statLabel: {
     fontSize: 12,
-    fontFamily: 'Inter-Medium',
+    fontWeight: '500',
     color: '#64748B',
     marginTop: 4,
+    textAlign: 'center',
   },
   searchContainer: {
-    paddingHorizontal: 20,
     marginBottom: 16,
   },
   searchBox: {
@@ -1369,11 +1315,10 @@ const styles = StyleSheet.create({
   searchInput: {
     flex: 1,
     fontSize: 16,
-    fontFamily: 'Inter-Regular',
+    fontWeight: 'normal',
     color: '#1E293B',
   },
   filterContainer: {
-    paddingHorizontal: 20,
     marginBottom: 16,
   },
   filterScroll: {
@@ -1394,32 +1339,26 @@ const styles = StyleSheet.create({
   },
   filterText: {
     fontSize: 14,
-    fontFamily: 'Inter-Medium',
+    fontWeight: '500',
     color: '#64748B',
   },
   filterTextActive: {
     color: '#FFFFFF',
   },
-  content: {
-    flex: 1,
-  },
   usersList: {
-    padding: 20,
-    paddingTop: 0,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    marginHorizontal: -6,
   },
   userCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
     padding: 16,
     marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
+    marginHorizontal: 6,
+    width: (width / 2) - 32,
+    minWidth: 280,
   },
   userHeader: {
     flexDirection: 'row',
@@ -1443,7 +1382,7 @@ const styles = StyleSheet.create({
   },
   userAvatarText: {
     fontSize: 16,
-    fontFamily: 'Inter-Bold',
+    fontWeight: 'bold',
     color: '#FFFFFF',
   },
   userDetails: {
@@ -1451,7 +1390,7 @@ const styles = StyleSheet.create({
   },
   userName: {
     fontSize: 16,
-    fontFamily: 'Inter-SemiBold',
+    fontWeight: '600',
     color: '#1E293B',
     marginBottom: 4,
   },
@@ -1464,7 +1403,7 @@ const styles = StyleSheet.create({
   },
   roleText: {
     fontSize: 12,
-    fontFamily: 'Inter-Medium',
+    fontWeight: '500',
   },
   userStatus: {
     alignItems: 'center',
@@ -1485,7 +1424,7 @@ const styles = StyleSheet.create({
   },
   contactText: {
     fontSize: 14,
-    fontFamily: 'Inter-Regular',
+    fontWeight: 'normal',
     color: '#64748B',
     flex: 1,
   },
@@ -1506,7 +1445,7 @@ const styles = StyleSheet.create({
   },
   actionButtonText: {
     fontSize: 12,
-    fontFamily: 'Inter-SemiBold',
+    fontWeight: '600',
   },
   emptyState: {
     alignItems: 'center',
@@ -1515,14 +1454,14 @@ const styles = StyleSheet.create({
   },
   emptyTitle: {
     fontSize: 18,
-    fontFamily: 'Inter-SemiBold',
+    fontWeight: '600',
     color: '#475569',
     marginTop: 16,
     marginBottom: 8,
   },
   emptySubtitle: {
     fontSize: 14,
-    fontFamily: 'Inter-Regular',
+    fontWeight: 'normal',
     color: '#64748B',
     textAlign: 'center',
     lineHeight: 20,
@@ -1532,7 +1471,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 20,
   },
   modalContent: {
     backgroundColor: '#FFFFFF',
@@ -1544,18 +1482,10 @@ const styles = StyleSheet.create({
   },
   modalTitle: {
     fontSize: 20,
-    fontFamily: 'Inter-Bold',
+    fontWeight: 'bold',
     color: '#1E293B',
     marginBottom: 20,
     textAlign: 'center',
-  },
-  modalSubtitle: {
-    fontSize: 14,
-    fontFamily: 'Inter-Regular',
-    color: '#64748B',
-    marginBottom: 16,
-    textAlign: 'center',
-    lineHeight: 20,
   },
   formContainer: {
     marginBottom: 20,
@@ -1565,7 +1495,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     padding: 12,
     fontSize: 16,
-    fontFamily: 'Inter-Regular',
+    fontWeight: 'normal',
     color: '#1E293B',
     borderWidth: 1,
     borderColor: '#E2E8F0',
@@ -1576,33 +1506,26 @@ const styles = StyleSheet.create({
   },
   roleLabel: {
     fontSize: 16,
-    fontFamily: 'Inter-Medium',
+    fontWeight: '500',
     color: '#1E293B',
     marginBottom: 8,
   },
-  roleOptions: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  roleOption: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 6,
+  pickerContainer: {
     backgroundColor: '#F8FAFC',
+    borderRadius: 8,
     borderWidth: 1,
     borderColor: '#E2E8F0',
+    marginBottom: 16,
+    overflow: 'hidden',
   },
-  roleOptionSelected: {
-    backgroundColor: '#7C3AED',
-    borderColor: '#7C3AED',
+  pickerStyle: {
+    height: 48,
+    width: '100%',
+    color: '#1E293B',
   },
-  roleOptionText: {
-    fontSize: 14,
-    fontFamily: 'Inter-Medium',
-    color: '#64748B',
-  },
-  roleOptionTextSelected: {
-    color: '#FFFFFF',
+  pickerItemStyle: {
+    fontSize: 16,
+    color: '#1E293B',
   },
   modalActions: {
     flexDirection: 'row',
@@ -1619,7 +1542,7 @@ const styles = StyleSheet.create({
   },
   cancelButtonText: {
     fontSize: 16,
-    fontFamily: 'Inter-SemiBold',
+    fontWeight: '600',
     color: '#64748B',
   },
   confirmButton: {
@@ -1631,389 +1554,352 @@ const styles = StyleSheet.create({
   },
   confirmButtonText: {
     fontSize: 16,
-    fontFamily: 'Inter-SemiBold',
+    fontWeight: '600',
     color: '#FFFFFF',
   },
-  userDetailsContainer: {
-    padding: 20,
+
+  modalContentWeb: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 24,
+    width: '90%',
+    maxHeight: '90%',
+    overflow: 'hidden',
   },
-  userDetailsHeader: {
+  modalHeaderWeb: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 20,
   },
-  userDetailsAvatar: {
-    width: 40,
-    height: 40,
+  modalTitleWeb: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#1E293B',
+    textAlign: 'left',
+  },
+  closeIconButtonWeb: {
+    padding: 8,
     borderRadius: 20,
+    backgroundColor: '#E2E8F0',
+  },
+  userDetailsSectionWeb: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 24,
+    flex: 1,
+  },
+  userDetailsHeaderWeb: {
+    flexDirection: 'column',
+    alignItems: 'center',
+    marginBottom: 24,
+    padding: 20,
+    borderRadius: 12,
+    backgroundColor: '#F0F4F8',
+    width: '35%',
+    minWidth: 200,
+  },
+  userDetailsAvatarWeb: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
     backgroundColor: '#7C3AED',
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 12,
+    marginBottom: 16,
   },
   userDetailsAvatarText: {
-    fontSize: 16,
-    fontFamily: 'Inter-Bold',
+    fontSize: 32,
+    fontWeight: 'bold',
     color: '#FFFFFF',
   },
-  userDetailsInfo: {
+  userDetailsInfoWeb: {
+    alignItems: 'center',
     flex: 1,
   },
-  userDetailsName: {
-    fontSize: 16,
-    fontFamily: 'Inter-SemiBold',
+  userDetailsNameWeb: {
+    fontSize: 22,
+    fontWeight: 'bold',
     color: '#1E293B',
-    marginBottom: 4,
+    marginBottom: 8,
+    textAlign: 'center',
   },
-  userDetailsEmail: {
-    fontSize: 14,
-    fontFamily: 'Inter-Regular',
+  userDetailsEmailWeb: {
+    fontSize: 16,
+    fontWeight: 'normal',
     color: '#64748B',
+    marginTop: 8,
+    textAlign: 'center',
   },
-  userDetailsPhone: {
-    fontSize: 14,
-    fontFamily: 'Inter-Regular',
+  userDetailsPhoneWeb: {
+    fontSize: 16,
+    fontWeight: 'normal',
     color: '#64748B',
+    marginTop: 4,
+    textAlign: 'center',
   },
-  workAnalyticsSection: {
-    marginBottom: 20,
+  workAnalyticsSectionWeb: {
+    flex: 1,
+    paddingHorizontal: 16,
   },
-  sectionHeader: {
+  sectionHeaderWeb: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 16,
   },
-  sectionTitle: {
-    fontSize: 18,
-    fontFamily: 'Inter-SemiBold',
+  sectionTitleWeb: {
+    fontSize: 20,
+    fontWeight: 'bold',
     color: '#1E293B',
   },
-  analyticsButton: {
+  analyticsButtonWeb: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#F0F4F8',
     borderRadius: 8,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    gap: 4,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    gap: 6,
   },
-  analyticsButtonText: {
-    fontSize: 14,
-    fontFamily: 'Inter-Medium',
+  analyticsButtonTextWeb: {
+    fontSize: 15,
+    fontWeight: '500',
     color: '#3B82F6',
   },
-  performanceCard: {
+  performanceCardWeb: {
     backgroundColor: '#F8FAFC',
     borderRadius: 12,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    marginBottom: 20,
-  },
-  performanceTitle: {
-    fontSize: 18,
-    fontFamily: 'Inter-SemiBold',
-    color: '#1E293B',
-    marginBottom: 12,
-  },
-  workStatsBackground: {
-    backgroundColor: '#F8FAFC',
-    borderRadius: 12,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  workStatsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 12,
-  },
-  workStatsRowLast: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 0,
-  },
-  workStatCard: {
-    alignItems: 'center',
-    flex: 1,
-  },
-  workStatIconContainer: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#F8FAFC',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  workStatContent: {
-    alignItems: 'center',
-  },
-  workStatNumber: {
-    fontSize: 18,
-    fontFamily: 'Inter-Bold',
-    color: '#1E293B',
-    marginBottom: 4,
-  },
-  workStatLabel: {
-    fontSize: 12,
-    fontFamily: 'Inter-Medium',
-    color: '#64748B',
-  },
-  closeButton: {
-    flex: 1,
-    paddingVertical: 12,
-    backgroundColor: '#F8FAFC',
-    borderRadius: 8,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  closeButtonText: {
-    fontSize: 16,
-    fontFamily: 'Inter-SemiBold',
-    color: '#64748B',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  closeIconButton: {
-    padding: 8,
-  },
-  analyticsContainer: {
     padding: 20,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginBottom: 24,
   },
-  analyticsUserHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  analyticsUserAvatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#7C3AED',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  analyticsUserAvatarText: {
-    fontSize: 16,
-    fontFamily: 'Inter-Bold',
-    color: '#FFFFFF',
-  },
-  analyticsUserInfo: {
-    flex: 1,
-  },
-  analyticsUserName: {
-    fontSize: 16,
-    fontFamily: 'Inter-SemiBold',
+  performanceTitleWeb: {
+    fontSize: 18,
+    fontWeight: '600',
     color: '#1E293B',
-    marginBottom: 4,
+    marginBottom: 16,
   },
-  analyticsUserEmail: {
-    fontSize: 14,
-    fontFamily: 'Inter-Regular',
-    color: '#64748B',
+  workStatsBackgroundWeb: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 10,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
   },
-  periodTabs: {
+  workStatsRowWeb: {
     flexDirection: 'row',
     justifyContent: 'space-around',
-    marginBottom: 20,
+    marginBottom: 16,
   },
-  periodTab: {
-    flex: 1,
-    paddingVertical: 12,
-    backgroundColor: '#F8FAFC',
-    borderRadius: 8,
-    marginHorizontal: 4,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  periodTabTitle: {
-    fontSize: 16,
-    fontFamily: 'Inter-SemiBold',
-    color: '#1E293B',
-    textAlign: 'center',
-    marginBottom: 8,
-  },
-  periodStatsGrid: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  periodStatCard: {
+  workStatCardWeb: {
     alignItems: 'center',
     flex: 1,
+    padding: 8,
   },
-  periodStatNumber: {
-    fontSize: 18,
-    fontFamily: 'Inter-Bold',
+  workStatNumberWeb: {
+    fontSize: 20,
+    fontWeight: 'bold',
     color: '#1E293B',
-    marginBottom: 4,
+    marginBottom: 6,
   },
-  periodStatLabel: {
-    fontSize: 12,
-    fontFamily: 'Inter-Medium',
+  workStatLabelWeb: {
+    fontSize: 13,
+    fontWeight: '500',
     color: '#64748B',
     textAlign: 'center',
   },
-  overallStatsSection: {
-    marginBottom: 20,
-  },
-  overallStatsTitle: {
-    fontSize: 18,
-    fontFamily: 'Inter-SemiBold',
-    color: '#1E293B',
-    marginBottom: 8,
-  },
-  overallStatsGrid: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  overallStatCard: {
-    alignItems: 'center',
-    flex: 1,
-  },
-  reassignUserList: {
-    maxHeight: 300,
-    marginVertical: 16,
-  },
-  reassignUserItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 16,
+  closeButtonWeb: {
+    marginTop: 24,
+    paddingVertical: 14,
     backgroundColor: '#F8FAFC',
-    borderRadius: 12,
-    marginBottom: 8,
+    borderRadius: 10,
+    alignItems: 'center',
     borderWidth: 1,
     borderColor: '#E2E8F0',
   },
-  reassignUserInfo: {
+  closeButtonTextWeb: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  analyticsContainerWeb: {
+    paddingTop: 10,
+  },
+  analyticsUserHeaderWeb: {
     flexDirection: 'row',
     alignItems: 'center',
-    flex: 1,
+    marginBottom: 24,
+    backgroundColor: '#F0F4F8',
+    padding: 16,
+    borderRadius: 12,
   },
-  reassignUserAvatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+  analyticsUserAvatarWeb: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
     backgroundColor: '#7C3AED',
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 12,
+    marginRight: 16,
   },
-  reassignUserAvatarText: {
-    fontSize: 16,
-    fontFamily: 'Inter-Bold',
+  analyticsUserAvatarText: {
+    fontSize: 24,
+    fontWeight: 'bold',
     color: '#FFFFFF',
   },
-  reassignUserDetails: {
+  analyticsUserInfoWeb: {
     flex: 1,
   },
-  reassignUserName: {
-    fontSize: 16,
-    fontFamily: 'Inter-SemiBold',
-    color: '#1E293B',
-    marginBottom: 2,
-  },
-  reassignUserRole: {
-    fontSize: 12,
-    fontFamily: 'Inter-Medium',
-    color: '#7C3AED',
-    marginBottom: 2,
-  },
-  reassignUserEmail: {
-    fontSize: 12,
-    fontFamily: 'Inter-Regular',
-    color: '#64748B',
-  },
-  reassignUserAction: {
-    backgroundColor: '#10B981',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 8,
-  },
-  reassignUserActionText: {
-    fontSize: 14,
-    fontFamily: 'Inter-Medium',
-    color: '#FFFFFF',
-  },
-  overallStatNumber: {
-    fontSize: 18,
-    fontFamily: 'Inter-Bold',
+  analyticsUserNameWeb: {
+    fontSize: 20,
+    fontWeight: 'bold',
     color: '#1E293B',
     marginBottom: 4,
   },
-  overallStatLabel: {
-    fontSize: 12,
-    fontFamily: 'Inter-Medium',
+  analyticsUserEmailWeb: {
+    fontSize: 15,
+    fontWeight: 'normal',
     color: '#64748B',
   },
-  insightsSection: {
-    marginTop: 20,
+  periodTabsWeb: {
+    flexDirection: 'column',
+    gap: 16,
+    marginBottom: 24,
   },
-  insightsTitle: {
+  periodTabWeb: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginHorizontal: 0,
+  },
+  periodTabTitleWeb: {
     fontSize: 18,
-    fontFamily: 'Inter-SemiBold',
+    fontWeight: '600',
     color: '#1E293B',
+    textAlign: 'left',
     marginBottom: 12,
   },
-  insightsContent: {
-    padding: 16,
+  periodStatsGridWeb: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    gap: 16,
+  },
+  periodStatCardWeb: {
+    alignItems: 'center',
+    flex: 1,
+    padding: 8,
+  },
+  periodStatNumberWeb: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#1E293B',
+    marginBottom: 4,
+  },
+  periodStatLabelWeb: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#64748B',
+    textAlign: 'center',
+  },
+  overallStatsSectionWeb: {
+    marginBottom: 24,
+  },
+  overallStatsTitleWeb: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#1E293B',
+    marginBottom: 16,
+  },
+  overallStatsGridWeb: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    gap: 16,
+  },
+  overallStatCardWeb: {
+    alignItems: 'center',
+    flex: 1,
+    padding: 12,
     backgroundColor: '#F8FAFC',
     borderRadius: 12,
     borderWidth: 1,
     borderColor: '#E2E8F0',
   },
-  insightText: {
-    fontSize: 14,
-    fontFamily: 'Inter-Regular',
-    color: '#64748B',
-    marginBottom: 8,
-  },
-  summarySection: {
-    marginTop: 20,
-  },
-  summaryTitle: {
-    fontSize: 18,
-    fontFamily: 'Inter-SemiBold',
+  overallStatNumberWeb: {
+    fontSize: 20,
+    fontWeight: 'bold',
     color: '#1E293B',
-    marginBottom: 12,
+    marginBottom: 4,
   },
-  summaryGrid: {
+  overallStatLabelWeb: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#64748B',
+    textAlign: 'center',
+  },
+  insightsSectionWeb: {
+    marginTop: 24,
+  },
+  insightsTitleWeb: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#1E293B',
+    marginBottom: 16,
+  },
+  insightsContentWeb: {
+    padding: 20,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  insightTextWeb: {
+    fontSize: 15,
+    fontWeight: 'normal',
+    color: '#64748B',
+    marginBottom: 10,
+  },
+  summarySectionWeb: {
+    marginTop: 24,
+  },
+  summaryTitleWeb: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#1E293B',
+    marginBottom: 16,
+  },
+  summaryGridWeb: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 12,
+    justifyContent: 'space-around',
+    gap: 16,
   },
-  summaryCard: {
+  summaryCardWeb: {
     alignItems: 'center',
     flex: 1,
     backgroundColor: '#F8FAFC',
     borderRadius: 12,
-    padding: 16,
+    padding: 20,
     borderWidth: 1,
     borderColor: '#E2E8F0',
   },
-  summaryLabel: {
-    fontSize: 14,
-    fontFamily: 'Inter-Medium',
+  summaryLabelWeb: {
+    fontSize: 15,
+    fontWeight: '500',
     color: '#64748B',
-    marginBottom: 4,
+    marginBottom: 6,
   },
-  summaryNumber: {
-    fontSize: 18,
-    fontFamily: 'Inter-Bold',
+  summaryNumberWeb: {
+    fontSize: 20,
+    fontWeight: 'bold',
     color: '#1E293B',
-    marginBottom: 4,
+    marginBottom: 6,
   },
-  summarySubtext: {
-    fontSize: 12,
-    fontFamily: 'Inter-Regular',
+  summarySubtextWeb: {
+    fontSize: 13,
+    fontWeight: 'normal',
     color: '#64748B',
   },
 });
