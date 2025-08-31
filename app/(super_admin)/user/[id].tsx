@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert, Platform, Dimensions } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -13,6 +13,8 @@ import {
   Target,
   Download,
   Search,
+  FileText,
+  FileSpreadsheet,
 } from 'lucide-react-native';
 import { useData } from '@/contexts/DataContext';
 import { UserRole } from '@/types/auth';
@@ -84,7 +86,7 @@ export default function UserDetailsScreen() {
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 5;
 
-  const onSearchDateRange = () => {
+  const onSearchDateRange = useCallback(() => {
     if (!user) return;
     const fromParts = startDateInput.split('-');
     const toParts = endDateInput.split('-');
@@ -115,9 +117,9 @@ export default function UserDetailsScreen() {
         return leadDate >= start && leadDate <= end;
       });
     } else {
-      const callLogs = getCallLogs(user.id);
-      const callLaterLogs = getCallLaterLogsByOperator(user.id);
-      const logs = [...callLogs, ...callLaterLogs];
+      const allCallLogs = getCallLogs(user.id);
+      const allCallLaterLogs = getCallLaterLogsByOperator(user.id);
+      const logs = [...allCallLogs, ...allCallLaterLogs];
       data = logs.filter((log: any) => {
         const logDate = new Date(log.created_at || log.createdAt);
         return logDate >= start && logDate <= end;
@@ -125,13 +127,13 @@ export default function UserDetailsScreen() {
     }
 
     setFilteredData(data);
-    setCurrentPage(1); // Reset to first page on new search
-  };
+    setCurrentPage(1);
+  }, [startDateInput, endDateInput, user, searchType, getCallLogs, getCallLaterLogsByOperator, getUserLeads]);
 
-  const applyStatusFilter = (status: string) => {
+  const applyStatusFilter = useCallback((status: string) => {
     setSelectedStatus(status);
-    setCurrentPage(1); // Reset to first page on new filter
-  };
+    setCurrentPage(1);
+  }, []);
 
   const finalFilteredData = useMemo(() => {
     if (searchType !== 'leads') return filteredData;
@@ -142,10 +144,7 @@ export default function UserDetailsScreen() {
   }, [filteredData, selectedStatus, searchType]);
 
   const totalPages = Math.ceil(finalFilteredData.length / pageSize);
-  const paginatedData = finalFilteredData.slice(
-    (currentPage - 1) * pageSize,
-    currentPage * pageSize
-  );
+  const paginatedData = finalFilteredData.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   const statsForDate = useMemo(() => {
     if (!user) return null;
@@ -155,12 +154,10 @@ export default function UserDetailsScreen() {
     end.setHours(23, 59, 59, 999);
 
     const userLeads = getUserLeads(user.id);
-
     const leadsCreatedThatDay = userLeads.filter((lead: any) => {
       const leadDate = new Date(lead.created_at);
       return leadDate >= start && leadDate <= end;
     });
-
     const leadsUpdatedThatDay = userLeads.filter((lead: any) => {
       const leadDate = new Date(lead.updated_at);
       return leadDate >= start && leadDate <= end;
@@ -188,24 +185,19 @@ export default function UserDetailsScreen() {
           const d = new Date(log.created_at);
           return d >= start && d <= end;
         });
-
         const operatorCallLater = getCallLaterLogsByOperator(user.id);
         const callLaterInRange = operatorCallLater.filter((log: any) => {
           const d = new Date(log.createdAt);
           return d >= start && d <= end;
         });
-
         const periodCalls = callsInRange.length;
         const periodCallLater = callLaterInRange.length;
         const periodWork = periodCalls + periodCallLater;
-
         const periodOperatorLeads = leadsUpdatedThatDay.filter((lead: any) => lead.call_operator_id === user.id);
         const periodCompletedLeads = periodOperatorLeads.filter((lead: any) => lead.status === 'completed');
-
         const totalCalls = operatorCalls.length;
         const totalCallLater = operatorCallLater.length;
         const totalCompletedCalls = operatorCalls.filter((l: any) => (l.status_at_call || '').toLowerCase() === 'completed').length;
-
         return {
           periodWork,
           periodCompleted: periodCompletedLeads.length,
@@ -253,10 +245,9 @@ export default function UserDetailsScreen() {
           periodConversionRate: '0',
         };
     }
-  }, [user, startDateInput, endDateInput, getUserLeads, getCallLogs, getCallLaterLogsByOperator]);
+  }, [user, startDateInput, endDateInput, getUserLeads, getCallLogs, getCallLaterLogsByOperator, users]);
 
-  // Helpers for standard period windows and aggregation
-  const getDateRange = (period: 'daily' | 'weekly' | 'monthly') => {
+  const getDateRange = useCallback((period: 'daily' | 'weekly' | 'monthly') => {
     const now = new Date();
     const start = new Date();
     switch (period) {
@@ -264,7 +255,7 @@ export default function UserDetailsScreen() {
         start.setHours(0, 0, 0, 0);
         break;
       case 'weekly':
-        start.setDate(now.getDate() - 6); // To get a full week, including today
+        start.setDate(now.getDate() - 6);
         start.setHours(0, 0, 0, 0);
         break;
       case 'monthly':
@@ -274,9 +265,9 @@ export default function UserDetailsScreen() {
         break;
     }
     return { start, end: now };
-  };
+  }, []);
 
-  const getStatsForRange = (u: any, start: Date, end: Date) => {
+  const getStatsForRange = useCallback((u: any, start: Date, end: Date) => {
     const userLeads = getUserLeads(u.id);
     const leadsCreated = userLeads.filter((lead: any) => {
       const d = new Date(lead.created_at);
@@ -309,23 +300,18 @@ export default function UserDetailsScreen() {
           const d = new Date(log.created_at);
           return d >= start && d <= end;
         });
-
         const operatorCallLater = getCallLaterLogsByOperator(u.id);
         const callLaterInRange = operatorCallLater.filter((log: any) => {
           const d = new Date(log.createdAt);
           return d >= start && d <= end;
         });
-
         const periodCalls = callsInRange.length;
         const periodCallLater = callLaterInRange.length;
         const periodWork = periodCalls + periodCallLater;
-
         const periodCompletedCalls = callsInRange.filter((l: any) => (l.status_at_call || '').toLowerCase() === 'completed').length;
-
         const totalCalls = operatorCalls.length;
         const totalCallLater = operatorCallLater.length;
         const totalCompletedCalls = operatorCalls.filter((l: any) => (l.status_at_call || '').toLowerCase() === 'completed').length;
-
         return {
           periodWork,
           periodCompleted: periodCompletedCalls,
@@ -363,36 +349,71 @@ export default function UserDetailsScreen() {
       default:
         return { periodWork: 0, periodCompleted: 0, periodConversionRate: '0', totalWork: 0, totalCompleted: 0, conversionRate: '0' };
     }
-  };
+  }, [getUserLeads, getCallLogs, getCallLaterLogsByOperator]);
 
   const todayStats = useMemo(() => {
     if (!user) return null;
     const { start, end } = getDateRange('daily');
     return getStatsForRange(user, start, end);
-  }, [user, getUserLeads, getCallLogs, getCallLaterLogsByOperator]);
-  
+  }, [user, getDateRange, getStatsForRange]);
+
   const weekStats = useMemo(() => {
     if (!user) return null;
     const { start, end } = getDateRange('weekly');
     return getStatsForRange(user, start, end);
-  }, [user, getUserLeads, getCallLogs, getCallLaterLogsByOperator]);
-  
+  }, [user, getDateRange, getStatsForRange]);
+
   const monthStats = useMemo(() => {
     if (!user) return null;
     const { start, end } = getDateRange('monthly');
     return getStatsForRange(user, start, end);
-  }, [user, getUserLeads, getCallLogs, getCallLaterLogsByOperator]);
-  
+  }, [user, getDateRange, getStatsForRange]);
 
-  const downloadData = async (data: any[], fileName: string) => {
+  const toCSV = (data: any[], type: 'leads' | 'logs') => {
+    if (!data || data.length === 0) return '';
+    
+    // Normalize keys to be consistent for logs
+    const normalizedData = data.map(item => {
+      if (type === 'logs') {
+        // Map different key names to a consistent format
+        return {
+          id: item.id,
+          customer_name: item.customer_name || 'N/A',
+          phone_number: item.phone_number || 'N/A',
+          created_at: item.created_at || item.createdAt,
+          notes: item.notes || '',
+          type: item.type || 'Call Log',
+          status_at_call: item.status_at_call || '',
+        };
+      }
+      return item;
+    });
+
+    const headers = Object.keys(normalizedData[0]);
+    const headerRow = headers.map(header => `"${header}"`).join(',');
+    const dataRows = normalizedData.map(row => {
+      return headers.map(header => {
+        let value = row[header];
+        if (value === null || value === undefined) {
+          value = '';
+        } else if (typeof value === 'object') {
+          value = JSON.stringify(value);
+        } else if (typeof value === 'string') {
+          value = value.replace(/"/g, '""');
+        }
+        return `"${value}"`;
+      }).join(',');
+    }).join('\n');
+
+    return `${headerRow}\n${dataRows}`;
+  };
+
+  const downloadData = async (data: any[], fileName: string, type: 'leads' | 'logs') => {
     if (data.length === 0) {
       Alert.alert('No Data to Download', 'The selected list is empty.');
       return;
     }
-
-    const header = Object.keys(data[0]).join(',');
-    const csv = data.map((row) => Object.values(row).join(',')).join('\n');
-    const csvContent = `${header}\n${csv}`;
+    const csvContent = toCSV(data, type);
 
     if (Platform.OS === 'web') {
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -402,12 +423,34 @@ export default function UserDetailsScreen() {
       a.download = fileName;
       a.click();
       URL.revokeObjectURL(url);
+      Alert.alert('Download Successful', `The file ${fileName} has been downloaded.`);
     } else {
       Alert.alert('Download Not Supported', 'CSV download on mobile requires a file system library and is not implemented in this example.');
     }
   };
 
-  const handleDownload = (period: 'day' | 'week' | 'month' | 'custom') => {
+  const downloadExcel = (data: any[], fileName: string, type: 'leads' | 'logs') => {
+    if (data.length === 0) {
+      Alert.alert('No Data to Download', 'The selected list is empty.');
+      return;
+    }
+    const csvContent = toCSV(data, type);
+
+    if (Platform.OS === 'web') {
+      const blob = new Blob([csvContent], { type: 'application/vnd.ms-excel;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName.replace('.csv', '.xls');
+      a.click();
+      URL.revokeObjectURL(url);
+      Alert.alert('Download Successful', `The file ${fileName} has been downloaded as an Excel file.`);
+    } else {
+      Alert.alert('Download Not Supported', 'Excel download on mobile is not implemented.');
+    }
+  };
+
+  const handleDownload = (period: 'day' | 'week' | 'month' | 'custom', format: 'csv' | 'excel') => {
     if (!user) {
       Alert.alert('User Not Found', 'Cannot download data for an invalid user.');
       return;
@@ -415,21 +458,25 @@ export default function UserDetailsScreen() {
 
     let dataToDownload: any[] = [];
     let fileName = '';
-    const name = user.name;
+    const name = user.name.replace(/\s/g, '_');
+    const fileType = format === 'csv' ? 'csv' : 'xls';
 
     if (period === 'custom') {
-      dataToDownload = filteredData;
-      fileName = `${searchType}_custom_${startDateInput}_to_${endDateInput}_${name}.csv`;
+      dataToDownload = finalFilteredData;
+      fileName = `${searchType}_custom_${startDateInput}_to_${endDateInput}_${name}.${fileType}`;
     } else {
       const datePeriod = period === 'day' ? 'daily' : period === 'week' ? 'weekly' : 'monthly';
       const { start, end } = getDateRange(datePeriod as 'daily' | 'weekly' | 'monthly');
-
+      
       if (searchType === 'leads') {
         const userLeads = getUserLeads(user.id);
-        dataToDownload = userLeads.filter((lead: any) => {
+        const leadsForPeriod = userLeads.filter((lead: any) => {
           const leadDate = new Date(lead.created_at);
           return leadDate >= start && leadDate <= end;
         });
+        dataToDownload = selectedStatus === 'All'
+          ? leadsForPeriod
+          : leadsForPeriod.filter((lead) => lead.status === selectedStatus);
       } else {
         const callLogs = getCallLogs(user.id);
         const callLaterLogs = getCallLaterLogsByOperator(user.id);
@@ -439,14 +486,17 @@ export default function UserDetailsScreen() {
           return logDate >= start && logDate <= end;
         });
       }
-
-      fileName = `${searchType}_${period}_${name}.csv`;
+      fileName = `${searchType}_${period}_${name}.${fileType}`;
     }
     
     if (dataToDownload.length > 0) {
-      downloadData(dataToDownload, fileName);
+      if (format === 'csv') {
+        downloadData(dataToDownload, fileName, searchType);
+      } else {
+        downloadExcel(dataToDownload, fileName, searchType);
+      }
     } else {
-      Alert.alert('No Data', 'There is no data to download for the selected period.');
+      Alert.alert('No Data', `There is no data to download for the selected period and status.`);
     }
   };
 
@@ -548,6 +598,7 @@ export default function UserDetailsScreen() {
               onPress={() => {
                 setSearchType('logs');
                 setFilteredData([]);
+                setSelectedStatus('All');
               }}
             >
               <Text style={[styles.searchTypeButtonText, searchType === 'logs' && styles.searchTypeButtonTextActive]}>Logs</Text>
@@ -560,6 +611,7 @@ export default function UserDetailsScreen() {
               value={startDateInput}
               onChangeText={setStartDateInput}
               autoCapitalize="none"
+              keyboardType="numbers-and-punctuation"
             />
             <TextInput
               style={styles.input}
@@ -567,6 +619,7 @@ export default function UserDetailsScreen() {
               value={endDateInput}
               onChangeText={setEndDateInput}
               autoCapitalize="none"
+              keyboardType="numbers-and-punctuation"
             />
             <TouchableOpacity style={styles.searchBtn} onPress={onSearchDateRange}>
               <Search size={20} color="#FFFFFF" />
@@ -576,7 +629,7 @@ export default function UserDetailsScreen() {
 
         {filteredData.length > 0 && (
           <View style={styles.card}>
-            <Text style={styles.sectionTitle}>Data Found ({filteredData.length})</Text>
+            <Text style={styles.sectionTitle}>Data Found ({finalFilteredData.length})</Text>
             {searchType === 'leads' && (
               <ScrollView horizontal style={styles.filterScroll} showsHorizontalScrollIndicator={false}>
                 <TouchableOpacity
@@ -591,7 +644,7 @@ export default function UserDetailsScreen() {
                     style={[styles.statusFilterButton, selectedStatus === status && styles.statusFilterActive]}
                     onPress={() => applyStatusFilter(status)}
                   >
-                    <Text style={[styles.statusFilterText, selectedStatus === status && styles.statusFilterTextActive]}>{status}</Text>
+                    <Text style={[styles.statusFilterText, selectedStatus === status && styles.statusFilterTextActive]}>{status.replace('_', ' ')}</Text>
                   </TouchableOpacity>
                 ))}
               </ScrollView>
@@ -621,7 +674,7 @@ export default function UserDetailsScreen() {
                   const log = item;
                   return (
                     <View key={log.id || index} style={styles.logCard}>
-                      <Text style={styles.logCardTitle}>Log from {log.customer_name || 'N/A'}</Text>
+                      <Text style={styles.logCardTitle}>{`Log for ${log.customer_name || 'N/A'}`}</Text>
                       <Text style={styles.logCardDetail}>Type: {log.type || 'Call'}</Text>
                       <Text style={styles.logCardDetail}>Date: {new Date(log.created_at || log.createdAt).toLocaleString()}</Text>
                       {log.status_at_call && <Text style={styles.logCardDetail}>Outcome: {log.status_at_call}</Text>}
@@ -656,10 +709,17 @@ export default function UserDetailsScreen() {
             )}
 
             <View style={styles.downloadSection}>
-              <TouchableOpacity style={styles.downloadBtn} onPress={() => handleDownload('custom')}>
-                <Download size={16} color="#FFFFFF" />
-                <Text style={styles.downloadBtnText}>Download Data</Text>
-              </TouchableOpacity>
+              <Text style={styles.downloadSectionTitle}>Download Custom Search Results</Text>
+              <View style={styles.downloadBtnRow}>
+                <TouchableOpacity style={styles.downloadBtn} onPress={() => handleDownload('custom', 'csv')}>
+                  <FileText size={16} color="#FFFFFF" />
+                  <Text style={styles.downloadBtnText}>CSV</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.downloadBtn} onPress={() => handleDownload('custom', 'excel')}>
+                  <FileSpreadsheet size={16} color="#FFFFFF" />
+                  <Text style={styles.downloadBtnText}>Excel</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
         )}
@@ -667,18 +727,33 @@ export default function UserDetailsScreen() {
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Download Analytics</Text>
           <View style={styles.downloadGrid}>
-            <TouchableOpacity style={styles.downloadGridBtn} onPress={() => handleDownload('day')}>
+            <View style={styles.downloadGridItem}>
               <Text style={styles.downloadGridText}>Today</Text>
-              <Download size={20} color="#7C3AED" />
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.downloadGridBtn} onPress={() => handleDownload('week')}>
+              <TouchableOpacity style={styles.downloadGridBtn} onPress={() => handleDownload('day', 'csv')}>
+                <Download size={20} color="#7C3AED" />
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.downloadGridBtn} onPress={() => handleDownload('day', 'excel')}>
+                <FileSpreadsheet size={20} color="#7C3AED" />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.downloadGridItem}>
               <Text style={styles.downloadGridText}>This Week</Text>
-              <Download size={20} color="#7C3AED" />
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.downloadGridBtn} onPress={() => handleDownload('month')}>
+              <TouchableOpacity style={styles.downloadGridBtn} onPress={() => handleDownload('week', 'csv')}>
+                <Download size={20} color="#7C3AED" />
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.downloadGridBtn} onPress={() => handleDownload('week', 'excel')}>
+                <FileSpreadsheet size={20} color="#7C3AED" />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.downloadGridItem}>
               <Text style={styles.downloadGridText}>This Month</Text>
-              <Download size={20} color="#7C3AED" />
-            </TouchableOpacity>
+              <TouchableOpacity style={styles.downloadGridBtn} onPress={() => handleDownload('month', 'csv')}>
+                <Download size={20} color="#7C3AED" />
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.downloadGridBtn} onPress={() => handleDownload('month', 'excel')}>
+                <FileSpreadsheet size={20} color="#7C3AED" />
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </ScrollView>
@@ -912,6 +987,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: 'Inter-Medium',
     color: '#475569',
+    textTransform: 'capitalize',
   },
   statusFilterTextActive: {
     color: '#FFFFFF',
@@ -979,6 +1055,16 @@ const styles = StyleSheet.create({
     marginTop: 16,
     alignItems: 'center',
   },
+  downloadSectionTitle: {
+    fontSize: 16,
+    fontFamily: 'Inter-Semi-Bold',
+    color: '#1E293B',
+    marginBottom: 10,
+  },
+  downloadBtnRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
   downloadBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -998,7 +1084,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: 12,
   },
-  downloadGridBtn: {
+  downloadGridItem: {
     flex: 1,
     alignItems: 'center',
     backgroundColor: '#F1F5F9',
@@ -1011,6 +1097,9 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.05,
     shadowRadius: 4,
     elevation: 2,
+  },
+  downloadGridBtn: {
+    marginTop: 8,
   },
   downloadGridText: {
     fontSize: 14,
