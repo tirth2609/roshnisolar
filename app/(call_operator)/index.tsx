@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   View,
   Text,
@@ -18,12 +18,12 @@ import {
   KeyboardAvoidingView,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { 
-  Phone, 
-  List, 
-  MapPin, 
-  Calendar, 
-  TrendingUp, 
+import {
+  Phone,
+  List,
+  MapPin,
+  Calendar,
+  TrendingUp,
   Filter,
   PhoneCall,
   MessageSquare,
@@ -58,11 +58,11 @@ import { supabase } from '@/lib/supabase';
 import SkeletonLeadList from '../components/SkeletonLeadList';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { router } from 'expo-router';
-import { 
-  FadeInView, 
-  SlideInView, 
-  ScaleInView, 
-  AnimatedCard, 
+import {
+  FadeInView,
+  SlideInView,
+  ScaleInView,
+  AnimatedCard,
   AnimatedProgressBar,
   PulseView,
 } from '@/components/AnimatedComponents';
@@ -765,45 +765,52 @@ const getStyles = (theme: any) => StyleSheet.create({
     width: moderateScale(60),
     textAlign: 'center',
   },
+  statusIndicatorRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
 });
 
 export default function CallOperatorDashboard() {
   const { user } = useAuth();
-  const { 
-    getUserLeads, 
-    updateLeadStatus, 
+  const {
+    getUserLeads,
+    updateLeadStatus,
     updateLeadStatusWithCallLater,
-    assignLeadToTechnician, 
-    rescheduleLead, 
-    scheduleCall, 
-    getScheduledCallsForToday, 
-    getTechnicians, 
+    assignLeadToTechnician,
+    rescheduleLead,
+    scheduleCall,
+    getScheduledCallsForToday,
+    getTechnicians,
     getCallLaterLogs,
     searchLeadsByPhone,
     logCall,
     getCallLogs,
     getPredefinedMessages,
-    isLoading, 
-    refreshData 
+    isLoading,
+    refreshData
   } = useData();
   const { theme } = useTheme();
   const styles = getStyles(theme);
-  
-  // Basic state
+
+  // General state
   const [selectedStatus, setSelectedStatus] = useState<LeadStatus | 'all' | 'today'>('new');
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedFilter, setSelectedFilter] = useState('all');
-  
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
   // Search functionality
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearchModal, setShowSearchModal] = useState(false);
-  
+
   // Status update modal
   const [showStatusModal, setShowStatusModal] = useState(false);
   const [newStatus, setNewStatus] = useState<LeadStatus>('contacted');
   const [statusNotes, setStatusNotes] = useState('');
-  
+
   // Call later functionality
   const [showCallLaterModal, setShowCallLaterModal] = useState(false);
   const [selectedLeadForCallLater, setSelectedLeadForCallLater] = useState<Lead | null>(null);
@@ -813,56 +820,65 @@ export default function CallOperatorDashboard() {
   const [showCallLaterDatePicker, setShowCallLaterDatePicker] = useState(false);
   const [callLaterTime, setCallLaterTime] = useState(new Date());
   const [showCallLaterTimePicker, setShowCallLaterTimePicker] = useState(false);
-  
+
   // Call later history
   const [showCallLaterHistoryModal, setShowCallLaterHistoryModal] = useState(false);
   const [callLaterLogs, setCallLaterLogs] = useState<CallLaterLog[]>([]);
-  
+
   // Call history
   const [showCallHistoryModal, setShowCallHistoryModal] = useState(false);
-  
+
   // Technician assignment
   const [showTechnicianModal, setShowTechnicianModal] = useState(false);
   
+  // WhatsApp functionality state
+  const [showWhatsAppModal, setShowWhatsAppModal] = useState(false);
+  const [selectedLeadForWhatsApp, setSelectedLeadForWhatsApp] = useState<Lead | null>(null);
+  const [selectedMessage, setSelectedMessage] = useState<PredefinedMessage | null>(null);
+  const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
   // Data
   const myLeads = user ? getUserLeads(user.id) : [];
   const todaysScheduledCalls = user ? getScheduledCallsForToday(user.id) : [];
   const technicians = getTechnicians();
-  
+
   // Helper for date comparison (ignores time)
-  const isToday = (dateStr?: string) => {
+  const isToday = useCallback((dateStr?: string) => {
     if (!dateStr) return false;
     const d = new Date(dateStr);
     const today = new Date();
     return d.getFullYear() === today.getFullYear() && d.getMonth() === today.getMonth() && d.getDate() === today.getDate();
-  };
-  const isPast = (dateStr?: string) => {
+  }, []);
+  const isPast = useCallback((dateStr?: string) => {
     if (!dateStr) return false;
     const d = new Date(dateStr);
     const now = new Date();
-    // Only compare date part
     return d < new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  };
+  }, []);
 
   // Tab logic
-  const newLeads = myLeads.filter(l => l.status === 'new');
-  const todayFollowupLeads = myLeads.filter(l =>
+  const newLeads = useMemo(() => myLeads.filter(l => l.status === 'new'), [myLeads]);
+  const todayFollowupLeads = useMemo(() => myLeads.filter(l =>
     l.status === 'ringing' ||
     (l.scheduled_call_date && isToday(l.scheduled_call_date)) ||
     (l.scheduled_call_date && isPast(l.scheduled_call_date) && (l.status === 'hold' || l.status === 'new'))
-  );
-  const overdueLeads = myLeads.filter(l =>
+  ), [myLeads, isToday, isPast]);
+  const overdueLeads = useMemo(() => myLeads.filter(l =>
     (l.status === 'new' || l.status === 'hold') && l.scheduled_call_date && isPast(l.scheduled_call_date)
-  );
-  const holdLeads = myLeads.filter(l => l.status === 'hold');
-  const delNotRespondLeads = myLeads.filter(l => l.status === 'ringing');
-  const transitLeads = myLeads.filter(l => l.status === 'transit');
-  const completedLeads = myLeads.filter(l => l.status === 'completed');
-  const declinedLeads = myLeads.filter(l => l.status === 'declined');
+  ), [myLeads, isPast]);
+  const holdLeads = useMemo(() => myLeads.filter(l => l.status === 'hold'), [myLeads]);
+  const delNotRespondLeads = useMemo(() => myLeads.filter(l => l.status === 'ringing'), [myLeads]);
+  const transitLeads = useMemo(() => myLeads.filter(l => l.status === 'transit'), [myLeads]);
+  const completedLeads = useMemo(() => myLeads.filter(l => l.status === 'completed'), [myLeads]);
+  const declinedLeads = useMemo(() => myLeads.filter(l => l.status === 'declined'), [myLeads]);
   const allLeads = myLeads;
 
   // Tab list in required order
-  const tabList = [
+  const tabList = useMemo(() => [
     { key: 'new', label: 'New', count: newLeads.length },
     { key: 'todayFollowup', label: 'Today Followup', count: todayFollowupLeads.length },
     { key: 'overdue', label: 'Overdue', count: overdueLeads.length },
@@ -872,50 +888,40 @@ export default function CallOperatorDashboard() {
     { key: 'all', label: 'All', count: allLeads.length },
     { key: 'completed', label: 'Completed', count: completedLeads.length },
     { key: 'declined', label: 'Declined', count: declinedLeads.length },
-  ];
+  ], [newLeads, todayFollowupLeads, overdueLeads, holdLeads, delNotRespondLeads, transitLeads, completedLeads, declinedLeads, allLeads]);
 
   // Filtering logic for selected tab
-  let filteredLeads = allLeads;
-  switch (selectedFilter) {
-    case 'new':
-      filteredLeads = newLeads;
-      break;
-    case 'todayFollowup':
-      filteredLeads = todayFollowupLeads;
-      break;
-    case 'overdue':
-      filteredLeads = overdueLeads;
-      break;
-    case 'hold':
-      filteredLeads = holdLeads;
-      break;
-    case 'delNotRespond':
-      filteredLeads = delNotRespondLeads;
-      break;
-    case 'transit':
-      filteredLeads = transitLeads;
-      break;
-    case 'completed':
-      filteredLeads = completedLeads;
-      break;
-    case 'declined':
-      filteredLeads = declinedLeads;
-      break;
-    case 'all':
-    default:
-      filteredLeads = allLeads;
-      break;
-  }
+  const filteredLeads = useMemo(() => {
+    switch (selectedFilter) {
+      case 'new': return newLeads;
+      case 'todayFollowup': return todayFollowupLeads;
+      case 'overdue': return overdueLeads;
+      case 'hold': return holdLeads;
+      case 'delNotRespond': return delNotRespondLeads;
+      case 'transit': return transitLeads;
+      case 'completed': return completedLeads;
+      case 'declined': return declinedLeads;
+      case 'all': default: return allLeads;
+    }
+  }, [selectedFilter, newLeads, todayFollowupLeads, overdueLeads, holdLeads, delNotRespondLeads, transitLeads, completedLeads, declinedLeads, allLeads]);
 
   // Filtered leads with search
-  let searchedLeads = filteredLeads;
-  if (searchQuery.trim() !== '') {
+  const searchedLeads = useMemo(() => {
+    if (searchQuery.trim() === '') return filteredLeads;
     const q = searchQuery.trim().toLowerCase();
-    searchedLeads = filteredLeads.filter(lead =>
+    return filteredLeads.filter(lead =>
       (lead.customer_name?.toLowerCase().includes(q)) ||
       (lead.phone_number?.toLowerCase().includes(q))
     );
-  }
+  }, [filteredLeads, searchQuery]);
+
+  // Pagination logic
+  const totalPages = Math.ceil(searchedLeads.length / pageSize);
+  const paginatedLeads = searchedLeads.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+  useEffect(() => {
+    setCurrentPage(1); // Reset to first page if filters/search/pageSize change
+  }, [selectedFilter, searchQuery, pageSize]);
 
   const getStatusCounts = () => {
     const counts = {
@@ -928,31 +934,26 @@ export default function CallOperatorDashboard() {
     };
     return counts;
   };
-
   const counts = getStatusCounts();
 
-  // Handle call - open dialer first, then navigate to lead info page
-  const handleCall = (phone_number: string, leadId: string) => {
+  const handleCall = useCallback((phone_number: string, leadId: string) => {
+    if (isSubmitting) return;
     if (Platform.OS === 'web') {
       Alert.alert('Call Feature', `Would call: ${phone_number}\n\nNote: Calling is not available in web preview.`);
     } else {
       Linking.openURL(`tel:${phone_number}`);
     }
     router.push({ pathname: '/(call_operator)/lead-info', params: { leadId } });
-  };
+  }, [isSubmitting]);
 
-  // Handle lead press - navigate to lead info page
-  const handleLeadPress = (lead: Lead) => {
+  const handleLeadPress = useCallback((lead: Lead) => {
+    if (isSubmitting) return;
     router.push({ pathname: '/(call_operator)/lead-info', params: { leadId: lead.id } });
-  };
+  }, [isSubmitting]);
 
-  // Handle status update
-  const handleStatusUpdate = async () => {
-    if (!selectedLead) {
-      Alert.alert('Error', 'No lead selected for status update.');
-      return;
-    }
-
+  const handleStatusUpdate = useCallback(async () => {
+    if (!selectedLead || isSubmitting) return;
+    setIsSubmitting(true);
     try {
       await updateLeadStatus(selectedLead.id, newStatus, statusNotes);
       setShowStatusModal(false);
@@ -963,21 +964,23 @@ export default function CallOperatorDashboard() {
       refreshData();
     } catch (error) {
       Alert.alert('Error', 'Failed to update lead status');
+    } finally {
+      setIsSubmitting(false);
     }
-  };
+  }, [selectedLead, isSubmitting, newStatus, statusNotes, updateLeadStatus, refreshData]);
 
-  // Handle call later
-  const handleCallLater = (lead: Lead) => {
+  const handleCallLater = useCallback((lead: Lead) => {
+    if (isSubmitting) return;
     setSelectedLeadForCallLater(lead);
     setShowCallLaterModal(true);
-  };
+  }, [isSubmitting]);
 
-  const handleCallLaterSubmit = async () => {
-    if (!selectedLeadForCallLater || !callLaterReason.trim()) {
+  const handleCallLaterSubmit = useCallback(async () => {
+    if (!selectedLeadForCallLater || !callLaterReason.trim() || isSubmitting) {
       Alert.alert('Error', 'Please fill in all required fields');
       return;
     }
-
+    setIsSubmitting(true);
     try {
       const combinedDateTime = new Date(
         callLaterDate.getFullYear(),
@@ -995,7 +998,7 @@ export default function CallOperatorDashboard() {
         call_later_date: combinedDateTime.toISOString(),
         call_later_reason: callLaterReason
       });
-      
+
       setShowCallLaterModal(false);
       setCallLaterDate(combinedDateTime);
       setCallLaterReason('');
@@ -1005,11 +1008,12 @@ export default function CallOperatorDashboard() {
       refreshData();
     } catch (error) {
       Alert.alert('Error', 'Failed to mark lead for call later');
+    } finally {
+      setIsSubmitting(false);
     }
-  };
+  }, [selectedLeadForCallLater, callLaterReason, isSubmitting, callLaterDate, callLaterTime, callLaterNotes, updateLeadStatusWithCallLater, refreshData]);
 
-  // Handle call later history
-  const handleViewCallLaterHistory = async (lead: Lead) => {
+  const handleViewCallLaterHistory = useCallback(async (lead: Lead) => {
     try {
       const logs = getCallLaterLogs(lead.id);
       setCallLaterLogs(logs);
@@ -1018,31 +1022,29 @@ export default function CallOperatorDashboard() {
     } catch (error) {
       Alert.alert('Error', 'Failed to load call later history');
     }
-  };
+  }, [getCallLaterLogs]);
 
-  const handleViewHistory = (lead: Lead) => {
+  const handleViewHistory = useCallback((lead: Lead) => {
     setSelectedLead(lead);
     setShowCallHistoryModal(true);
-  };
+  }, []);
 
-  // Handle search
-  const handleSearch = () => {
+  const handleSearch = useCallback(() => {
     if (!searchQuery.trim()) {
       Alert.alert('Error', 'Please enter a phone number to search');
       return;
     }
     setShowSearchModal(true);
-  };
+  }, [searchQuery]);
 
-  const getSearchResults = () => {
+  const getSearchResults = useCallback(() => {
     if (!searchQuery.trim()) return [];
     return searchLeadsByPhone(searchQuery);
-  };
+  }, [searchQuery, searchLeadsByPhone]);
 
-  // Handle technician assignment
-  const handleAssignTechnician = async (technicianId: string) => {
-    if (!selectedLead) return;
-
+  const handleAssignTechnician = useCallback(async (technicianId: string) => {
+    if (!selectedLead || isSubmitting) return;
+    setIsSubmitting(true);
     try {
       await assignLeadToTechnician(selectedLead.id, technicianId);
       setShowTechnicianModal(false);
@@ -1051,11 +1053,12 @@ export default function CallOperatorDashboard() {
       refreshData();
     } catch (error) {
       Alert.alert('Error', 'Failed to assign technician');
+    } finally {
+      setIsSubmitting(false);
     }
-  };
+  }, [selectedLead, isSubmitting, assignLeadToTechnician, refreshData]);
 
-  // Refresh data
-  const onRefresh = async () => {
+  const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
       await refreshData();
@@ -1064,22 +1067,22 @@ export default function CallOperatorDashboard() {
     } finally {
       setRefreshing(false);
     }
-  };
+  }, [refreshData]);
 
-  // WhatsApp functionality
-  const handleWhatsApp = (lead: Lead) => {
+  const handleWhatsApp = useCallback((lead: Lead) => {
+    if (isSubmitting) return;
     setSelectedLeadForWhatsApp(lead);
     setShowWhatsAppModal(true);
     setSelectedMessage(null);
     setSelectedCategory('all');
-  };
+  }, [isSubmitting]);
 
-  const handleSendWhatsApp = async () => {
-    if (!selectedLeadForWhatsApp || !selectedMessage) {
+  const handleSendWhatsApp = useCallback(async () => {
+    if (!selectedLeadForWhatsApp || !selectedMessage || isSubmitting) {
       Alert.alert('Error', 'Please select a message to send');
       return;
     }
-
+    setIsSubmitting(true);
     try {
       const phone_number = selectedLeadForWhatsApp.phone_number.replace(/\s/g, '');
       const message = encodeURIComponent(selectedMessage.message);
@@ -1096,63 +1099,38 @@ export default function CallOperatorDashboard() {
       }
     } catch (error) {
       Alert.alert('Error', 'Failed to open WhatsApp');
+    } finally {
+      setIsSubmitting(false);
     }
-  };
+  }, [selectedLeadForWhatsApp, selectedMessage, isSubmitting]);
 
-  const getFilteredMessages = () => {
+  const getFilteredMessages = useCallback(() => {
     const messages = getPredefinedMessages();
     if (selectedCategory === 'all') {
       return messages;
     }
     return messages.filter((message: PredefinedMessage) => message.category === selectedCategory);
-  };
+  }, [selectedCategory, getPredefinedMessages]);
 
-  // Utility functions
-  const getGradientColors = () => {
+  const getGradientColors = useCallback(() => {
     return ['#FF6B35', '#F97316', '#FB923C'] as const;
-  };
+  }, []);
 
-  const getStatusColor = (status: string) => {
+  const getStatusColor = useCallback((status: string) => {
     return statusColors[status as keyof typeof statusColors] || statusColors.new;
-  };
+  }, []);
 
-  const getStatusIcon = (status: string) => {
+  const getStatusIcon = useCallback((status: string) => {
     switch (status) {
-      case 'new':
-        return <Bell size={16} color={theme.primary} />;
-      case 'contacted':
-        return <PhoneCall size={16} color={theme.warning} />;
-      case 'hold':
-        return <Pause size={16} color={theme.textSecondary} />;
-      case 'transit':
-        return <ArrowRight size={16} color={theme.primary} />;
-      case 'completed':
-        return <CheckCircle size={16} color={theme.success} />;
-      case 'declined':
-        return <XCircle size={16} color={theme.error} />;
-      default:
-        return <Bell size={16} color={theme.primary} />;
+      case 'new': return <Bell size={16} color={theme.primary} />;
+      case 'contacted': return <PhoneCall size={16} color={theme.warning} />;
+      case 'hold': return <Pause size={16} color={theme.textSecondary} />;
+      case 'transit': return <ArrowRight size={16} color={theme.primary} />;
+      case 'completed': return <CheckCircle size={16} color={theme.success} />;
+      case 'declined': return <XCircle size={16} color={theme.error} />;
+      default: return <Bell size={16} color={theme.primary} />;
     }
-  };
-
-  const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
-  const totalPages = Math.ceil(searchedLeads.length / pageSize);
-  const paginatedLeads = searchedLeads.slice((currentPage - 1) * pageSize, currentPage * pageSize);
-
-  useEffect(() => {
-    setCurrentPage(1); // Reset to first page if filters/search/pageSize change
-  }, [selectedFilter, searchQuery, pageSize]);
-
-  // New state for Logs tab
-  const [selectedLogLead, setSelectedLogLead] = useState<Lead | null>(null);
-  const [showLogsTab, setShowLogsTab] = useState(false);
-
-  // WhatsApp functionality state
-  const [showWhatsAppModal, setShowWhatsAppModal] = useState(false);
-  const [selectedLeadForWhatsApp, setSelectedLeadForWhatsApp] = useState<Lead | null>(null);
-  const [selectedMessage, setSelectedMessage] = useState<PredefinedMessage | null>(null);
-  const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  }, [theme]);
 
   if (isLoading) {
     return <SkeletonLeadList count={4} />;
@@ -1191,28 +1169,35 @@ export default function CallOperatorDashboard() {
                 <Menu size={20} color={theme.textInverse} />
               </TouchableOpacity>
             </View>
-            
             <SlideInView delay={200} duration={600} direction="up">
               <Text style={[styles.headerSubtitle, { color: theme.textInverse }]}>
                 Manage your leads and track your performance
               </Text>
             </SlideInView>
-            
-            {/* Search Bar */}
             <View style={styles.searchContainer}>
-              <TextInput
-                style={styles.searchInput}
-                placeholder="Search by name or phone..."
-                value={searchQuery}
-                onChangeText={setSearchQuery}
-                placeholderTextColor="#94A3B8"
-              />
+              <View style={styles.searchInputContainer}>
+                <Search size={20} color="#94A3B8" style={styles.searchIcon} />
+                <TextInput
+                  style={[{ flex: 1, color: theme.text }]}
+                  placeholder="Search by name or phone..."
+                  value={searchQuery}
+                  onChangeText={setSearchQuery}
+                  placeholderTextColor="#94A3B8"
+                  keyboardType="phone-pad"
+                  onSubmitEditing={handleSearch}
+                />
+                {searchQuery.length > 0 && (
+                  <TouchableOpacity onPress={() => setSearchQuery('')} style={styles.clearSearchButton}>
+                    <XCircle size={20} color="#94A3B8" />
+                  </TouchableOpacity>
+                )}
+              </View>
             </View>
           </View>
         </FadeInView>
       </LinearGradient>
 
-      <ScrollView 
+      <ScrollView
         style={styles.content}
         showsVerticalScrollIndicator={false}
         refreshControl={
@@ -1230,23 +1215,22 @@ export default function CallOperatorDashboard() {
                 </View>
                 <Text style={[styles.statNumber, { color: theme.text }]}>{todaysScheduledCalls.length}</Text>
                 <Text style={[styles.statLabel, { color: theme.textSecondary }]}>Today's Leads</Text>
-                <AnimatedProgressBar 
-                  progress={todaysScheduledCalls.length / Math.max(myLeads.length, 1)} 
+                <AnimatedProgressBar
+                  progress={todaysScheduledCalls.length / Math.max(myLeads.length, 1)}
                   height={4}
                   color={theme.primary}
                   backgroundColor={theme.border}
                   style={styles.statProgress}
                 />
               </AnimatedCard>
-              
               <AnimatedCard index={1} style={styles.statCard}>
                 <View style={[styles.statIcon, { backgroundColor: theme.success }]}>
                   <PhoneCall size={20} color={theme.textInverse} />
                 </View>
                 <Text style={[styles.statNumber, { color: theme.text }]}>{myLeads.filter(l => l.status === 'new').length}</Text>
                 <Text style={[styles.statLabel, { color: theme.textSecondary }]}>Pending Calls</Text>
-                <AnimatedProgressBar 
-                  progress={myLeads.filter(l => l.status === 'new').length / Math.max(myLeads.length, 1)} 
+                <AnimatedProgressBar
+                  progress={myLeads.filter(l => l.status === 'new').length / Math.max(myLeads.length, 1)}
                   height={4}
                   color={theme.success}
                   backgroundColor={theme.border}
@@ -1267,45 +1251,39 @@ export default function CallOperatorDashboard() {
                   key={filter.key}
                   style={[
                     styles.filterTab,
-                    selectedFilter === filter.key && { 
+                    selectedFilter === filter.key && {
                       backgroundColor: theme.primary,
                       borderColor: theme.primary,
                     },
                     { borderColor: theme.border }
                   ]}
-                  onPress={() => {
-                    if (filter.key === 'logs') {
-                      setShowLogsTab(true);
-                    } else {
-                      setSelectedFilter(filter.key);
-                      setShowLogsTab(false);
-                    }
-                  }}
+                  onPress={() => setSelectedFilter(filter.key)}
+                  disabled={isSubmitting}
                 >
                   <Text style={[
                     styles.filterTabText,
-                    { 
-                      color: selectedFilter === filter.key 
-                        ? theme.textInverse 
-                        : theme.textSecondary 
+                    {
+                      color: selectedFilter === filter.key
+                        ? theme.textInverse
+                        : theme.textSecondary
                     }
                   ]}>
                     {filter.label}
                   </Text>
                   <View style={[
                     styles.filterCount,
-                    { 
-                      backgroundColor: selectedFilter === filter.key 
-                        ? theme.textInverse 
-                        : theme.border 
+                    {
+                      backgroundColor: selectedFilter === filter.key
+                        ? theme.textInverse
+                        : theme.border
                     }
                   ]}>
                     <Text style={[
                       styles.filterCountText,
-                      { 
-                        color: selectedFilter === filter.key 
-                          ? theme.primary 
-                          : theme.textSecondary 
+                      {
+                        color: selectedFilter === filter.key
+                          ? theme.primary
+                          : theme.textSecondary
                       }
                     ]}>
                       {filter.count}
@@ -1321,8 +1299,8 @@ export default function CallOperatorDashboard() {
         <SlideInView delay={1000} duration={600} direction="up">
           <View style={styles.leadsContainer}>
             {paginatedLeads.map((lead, index) => (
-              <AnimatedCard 
-                key={lead.id} 
+              <AnimatedCard
+                key={lead.id}
                 index={index}
                 style={[styles.leadCard, { backgroundColor: theme.surface, borderColor: theme.border }]}
                 onPress={() => handleLeadPress(lead)}
@@ -1350,17 +1328,17 @@ export default function CallOperatorDashboard() {
                     </Text>
                   </View>
                 </View>
-                
+
                 <View style={styles.leadDetails}>
                   <Text style={[styles.leadAddress, { color: theme.textSecondary }]}>
                     {lead.address}
                   </Text>
                   {lead.status === 'hold' && lead.scheduled_call_date ? (
-                    <Text style={[styles.leadDate, { color: theme.textSecondary }]}> 
+                    <Text style={[styles.leadDate, { color: theme.textSecondary }]}>
                       Scheduled: {new Date(lead.scheduled_call_date).toLocaleDateString()} {lead.scheduledCallTime ? `at ${lead.scheduledCallTime}` : ''}
                     </Text>
                   ) : (
-                    <Text style={[styles.leadDate, { color: theme.textSecondary }]}> 
+                    <Text style={[styles.leadDate, { color: theme.textSecondary }]}>
                       {new Date(lead.created_at).toLocaleDateString()}
                     </Text>
                   )}
@@ -1370,28 +1348,30 @@ export default function CallOperatorDashboard() {
                     </Text>
                   )}
                 </View>
-                
+
                 <View style={styles.leadActions}>
                   <View style={styles.actionRow}>
-                    <TouchableOpacity 
-                      style={[styles.actionButton, {backgroundColor: theme.primary}]}
+                    <TouchableOpacity
+                      style={[styles.actionButton, { backgroundColor: theme.primary, opacity: isSubmitting ? 0.6 : 1 }]}
                       onPress={(e) => {
-                        e.stopPropagation(); // Prevent card's onPress from firing
+                        e.stopPropagation();
                         handleCall(lead.phone_number, lead.id);
                       }}
+                      disabled={isSubmitting}
                     >
                       <Phone size={16} color={theme.textInverse} />
                       <Text style={[styles.actionButtonText, { color: theme.textInverse }]}>
                         Call
                       </Text>
                     </TouchableOpacity>
-                    
-                    <TouchableOpacity 
-                      style={[styles.actionButton, {backgroundColor: '#25D366'}]}
+
+                    <TouchableOpacity
+                      style={[styles.actionButton, { backgroundColor: '#25D366', opacity: isSubmitting ? 0.6 : 1 }]}
                       onPress={(e) => {
                         e.stopPropagation();
                         handleWhatsApp(lead);
                       }}
+                      disabled={isSubmitting}
                     >
                       <MessageCircle size={16} color={theme.textInverse} />
                       <Text style={[styles.actionButtonText, { color: theme.textInverse }]}>
@@ -1399,16 +1379,17 @@ export default function CallOperatorDashboard() {
                       </Text>
                     </TouchableOpacity>
                   </View>
-                  
+
                   <View style={styles.actionRow}>
-                    {lead.status === 'new' && (
+                    {lead.status !== 'completed' && lead.status !== 'declined' && (
                       <TouchableOpacity
-                        style={[styles.actionButton, { backgroundColor: theme.success }]}
+                        style={[styles.actionButton, { backgroundColor: theme.success, opacity: isSubmitting ? 0.6 : 1 }]}
                         onPress={() => {
                           setSelectedLead(lead);
                           setNewStatus(lead.status);
                           setShowStatusModal(true);
                         }}
+                        disabled={isSubmitting}
                       >
                         <MessageSquare size={16} color={theme.textInverse} />
                         <Text style={[styles.actionButtonText, { color: theme.textInverse }]}>
@@ -1417,24 +1398,10 @@ export default function CallOperatorDashboard() {
                       </TouchableOpacity>
                     )}
 
-                    {lead.status === 'contacted' && (
-                      <TouchableOpacity
-                        style={[styles.actionButton, { backgroundColor: theme.warning }]}
-                        onPress={() => {
-                          setSelectedLead(lead);
-                          setShowTechnicianModal(true);
-                        }}
-                      >
-                        <ArrowRight size={16} color={theme.textInverse} />
-                        <Text style={[styles.actionButtonText, { color: theme.textInverse }]}>
-                          Assign
-                        </Text>
-                      </TouchableOpacity>
-                    )}
-
                     <TouchableOpacity
-                      style={[styles.actionButton, { backgroundColor: theme.primary }]}
+                      style={[styles.actionButton, { backgroundColor: theme.warning, opacity: isSubmitting ? 0.6 : 1 }]}
                       onPress={() => handleCallLater(lead)}
+                      disabled={isSubmitting}
                     >
                       <Clock size={16} color={theme.textInverse} />
                       <Text style={[styles.actionButtonText, { color: theme.textInverse }]}>
@@ -1442,24 +1409,23 @@ export default function CallOperatorDashboard() {
                       </Text>
                     </TouchableOpacity>
                   </View>
-
+                  <View style={styles.actionRow}>
                   {lead.call_later_count && lead.call_later_count > 0 && (
-                    <View style={styles.actionRow}>
                       <TouchableOpacity
-                        style={[styles.actionButton, { backgroundColor: theme.warning }]}
+                        style={[styles.actionButton, { backgroundColor: '#FF6B35', opacity: isSubmitting ? 0.6 : 1 }]}
                         onPress={() => handleViewHistory(lead)}
+                        disabled={isSubmitting}
                       >
                         <History size={16} color={theme.textInverse} />
                         <Text style={[styles.actionButtonText, { color: theme.textInverse }]}>
                           History ({getCallLogs(lead.id).length})
                         </Text>
                       </TouchableOpacity>
-                    </View>
                   )}
+                  </View>
                 </View>
               </AnimatedCard>
             ))}
-            
             {paginatedLeads.length === 0 && (
               <FadeInView delay={1200} duration={600}>
                 <View style={styles.emptyState}>
@@ -1472,7 +1438,7 @@ export default function CallOperatorDashboard() {
                     No leads found
                   </Text>
                   <Text style={[styles.emptySubtitle, { color: theme.textSecondary }]}>
-                    {selectedFilter === 'all' 
+                    {selectedFilter === 'all'
                       ? 'You don\'t have any leads assigned yet.'
                       : `No ${selectedFilter} leads at the moment.`
                     }
@@ -1527,7 +1493,7 @@ export default function CallOperatorDashboard() {
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Update Lead Status</Text>
-            
+
             <Text style={styles.modalLabel}>Change Status</Text>
             <View style={styles.dropdownContainer}>
               <Picker
@@ -1535,6 +1501,7 @@ export default function CallOperatorDashboard() {
                 onValueChange={(itemValue: string) => setNewStatus(itemValue as LeadStatus)}
               >
                 <Picker.Item label="Ringing" value="ringing" />
+                <Picker.Item label="Contacted" value="contacted" />
                 <Picker.Item label="Hold" value="hold" />
                 <Picker.Item label="Transit" value="transit" />
                 <Picker.Item label="Completed" value="completed" />
@@ -1551,20 +1518,27 @@ export default function CallOperatorDashboard() {
               numberOfLines={4}
               textAlignVertical="top"
               placeholderTextColor="#64748B"
+              editable={!isSubmitting}
             />
 
-            <View style={styles.modalActions}>
+            <View style={[styles.modalActions, { justifyContent: 'space-between', gap: 12 }]}>
               <TouchableOpacity
-                style={styles.cancelButton}
+                style={[styles.cancelButton, { flex: 1 }]}
                 onPress={() => setShowStatusModal(false)}
+                disabled={isSubmitting}
               >
                 <Text style={styles.cancelButtonText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={styles.confirmButton}
+                style={[styles.confirmButton, { flex: 1, opacity: isSubmitting ? 0.6 : 1 }]}
                 onPress={handleStatusUpdate}
+                disabled={isSubmitting}
               >
-                <Text style={styles.confirmButtonText}>Update</Text>
+                {isSubmitting ? (
+                  <ActivityIndicator color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.confirmButtonText}>Update</Text>
+                )}
               </TouchableOpacity>
             </View>
           </View>
@@ -1584,11 +1558,12 @@ export default function CallOperatorDashboard() {
             {selectedLeadForCallLater && (
               <Text style={styles.modalLabel}>Customer: {selectedLeadForCallLater.customer_name}</Text>
             )}
-            
+
             <Text style={styles.modalLabel}>Call Later Date</Text>
             <TouchableOpacity
               style={styles.datePickerButton}
               onPress={() => setShowCallLaterDatePicker(true)}
+              disabled={isSubmitting}
             >
               <Calendar size={20} color="#64748B" />
               <Text style={styles.datePickerButtonText}>
@@ -1596,6 +1571,18 @@ export default function CallOperatorDashboard() {
               </Text>
             </TouchableOpacity>
             
+            <Text style={styles.modalLabel}>Call Later Time</Text>
+            <TouchableOpacity
+              style={styles.datePickerButton}
+              onPress={() => setShowCallLaterTimePicker(true)}
+              disabled={isSubmitting}
+            >
+              <Clock size={20} color="#64748B" />
+              <Text style={styles.datePickerButtonText}>
+                {callLaterTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              </Text>
+            </TouchableOpacity>
+
             <Text style={styles.modalLabel}>Reason *</Text>
             <TextInput
               style={styles.modalInput}
@@ -1604,31 +1591,37 @@ export default function CallOperatorDashboard() {
               value={callLaterReason}
               onChangeText={setCallLaterReason}
               multiline
+              editable={!isSubmitting}
             />
-            
-            <Text style={styles.modalLabel}>Time</Text>
-            <TouchableOpacity
-              style={styles.datePickerButton}
-              onPress={() => setShowCallLaterTimePicker(true)}
-            >
-              <Calendar size={20} color="#64748B" />
-              <Text style={styles.datePickerButtonText}>
-                {callLaterTime.toLocaleTimeString()}
-              </Text>
-            </TouchableOpacity>
-            
-            <View style={styles.modalActions}>
+
+            <Text style={styles.modalLabel}>Notes</Text>
+            <TextInput
+              style={styles.modalInput}
+              placeholder="Additional notes..."
+              placeholderTextColor="#64748B"
+              value={callLaterNotes}
+              onChangeText={setCallLaterNotes}
+              multiline
+              editable={!isSubmitting}
+            />
+            <View style={[styles.modalActions, { justifyContent: 'space-between', gap: 12 }]}>
               <TouchableOpacity
-                style={styles.cancelButton}
+                style={[styles.cancelButton, { flex: 1 }]}
                 onPress={() => setShowCallLaterModal(false)}
+                disabled={isSubmitting}
               >
                 <Text style={styles.cancelButtonText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={styles.confirmButton}
+                style={[styles.confirmButton, { flex: 1, opacity: isSubmitting ? 0.6 : 1 }]}
                 onPress={handleCallLaterSubmit}
+                disabled={isSubmitting}
               >
-                <Text style={styles.confirmButtonText}>Mark for Call Later</Text>
+                {isSubmitting ? (
+                  <ActivityIndicator color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.confirmButtonText}>Mark for Call Later</Text>
+                )}
               </TouchableOpacity>
             </View>
           </View>
@@ -1648,7 +1641,7 @@ export default function CallOperatorDashboard() {
             {selectedLeadForCallLater && (
               <Text style={styles.modalLabel}>Customer: {selectedLeadForCallLater.customer_name}</Text>
             )}
-            
+
             <ScrollView style={styles.historyContainer}>
               {callLaterLogs.map((log, index) => (
                 <View key={log.id} style={styles.historyItem}>
@@ -1656,16 +1649,16 @@ export default function CallOperatorDashboard() {
                     <Text style={styles.historyDate}>
                       {new Date(log.call_later_date).toLocaleDateString()}
                     </Text>
-                    <Text style={styles.historyOperator}>
-                      by {log.call_operator_name}
+                    <Text style={styles.historyTime}>
+                      {new Date(log.call_later_date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </Text>
                   </View>
-                  <Text style={styles.historyReason}>{log.reason}</Text>
+                  <Text style={styles.historyReason}>{log.call_later_reason}</Text>
                   {log.notes && (
                     <Text style={styles.historyNotes}>{log.notes}</Text>
                   )}
-                  <Text style={styles.historyTime}>
-                    {new Date(log.createdAt).toLocaleString()}
+                  <Text style={styles.historyOperator}>
+                    Logged by {log.call_operator_name} on {new Date(log.createdAt).toLocaleDateString()}
                   </Text>
                 </View>
               ))}
@@ -1675,10 +1668,10 @@ export default function CallOperatorDashboard() {
                 </Text>
               )}
             </ScrollView>
-            
-            <View style={styles.modalActions}>
+
+            <View style={[styles.modalActions, { justifyContent: 'center' }]}>
               <TouchableOpacity
-                style={styles.cancelButton}
+                style={[styles.cancelButton, { flex: 1, backgroundColor: theme.surface }]}
                 onPress={() => setShowCallLaterHistoryModal(false)}
               >
                 <Text style={styles.cancelButtonText}>Close</Text>
@@ -1711,13 +1704,14 @@ export default function CallOperatorDashboard() {
                     setShowSearchModal(false);
                     setShowStatusModal(true);
                   }}
+                  disabled={isSubmitting}
                 >
-                  <View style={{flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center'}}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                     <View>
                       <Text style={styles.searchResultName}>{lead.customer_name}</Text>
                       <Text style={styles.searchResultPhone}>{lead.phone_number}</Text>
                     </View>
-                    <TouchableOpacity onPress={() => handleCall(lead.phone_number, lead.id)}>
+                    <TouchableOpacity onPress={() => handleCall(lead.phone_number, lead.id)} disabled={isSubmitting}>
                       <Phone size={24} color={theme.primary} />
                     </TouchableOpacity>
                   </View>
@@ -1728,10 +1722,11 @@ export default function CallOperatorDashboard() {
               )}
             </ScrollView>
             
-            <View style={styles.modalActions}>
+            <View style={[styles.modalActions, { justifyContent: 'center' }]}>
               <TouchableOpacity
-                style={styles.cancelButton}
+                style={[styles.cancelButton, { flex: 1, backgroundColor: theme.surface }]}
                 onPress={() => setShowSearchModal(false)}
+                disabled={isSubmitting}
               >
                 <Text style={styles.cancelButtonText}>Close</Text>
               </TouchableOpacity>
@@ -1752,26 +1747,32 @@ export default function CallOperatorDashboard() {
             <Text style={styles.modalTitle}>Assign Technician</Text>
             
             <ScrollView style={styles.technicianList}>
-              {technicians.map((tech) => (
-                <TouchableOpacity
-                  key={tech.id}
-                  style={styles.technicianOption}
-                  onPress={() => handleAssignTechnician(tech.id)}
-                >
-                  <View style={styles.technicianInfo}>
-                    <Text style={styles.technicianName}>{tech.name}</Text>
-                    <Text style={styles.technicianDetails}>{tech.phone}</Text>
-                    <Text style={styles.technicianSpecialization}>Technician</Text>
-                  </View>
-                  <ArrowRight size={20} color="#64748B" />
-                </TouchableOpacity>
-              ))}
+              {technicians.length > 0 ? (
+                technicians.map((tech) => (
+                  <TouchableOpacity
+                    key={tech.id}
+                    style={styles.technicianOption}
+                    onPress={() => handleAssignTechnician(tech.id)}
+                    disabled={isSubmitting}
+                  >
+                    <View style={styles.technicianInfo}>
+                      <Text style={styles.technicianName}>{tech.name}</Text>
+                      <Text style={styles.technicianDetails}>{tech.phone}</Text>
+                      <Text style={styles.technicianSpecialization}>Technician</Text>
+                    </View>
+                    <ArrowRight size={20} color="#64748B" />
+                  </TouchableOpacity>
+                ))
+              ) : (
+                <Text style={styles.noResultsText}>No technicians available.</Text>
+              )}
             </ScrollView>
 
-            <View style={styles.modalActions}>
+            <View style={[styles.modalActions, { justifyContent: 'center' }]}>
               <TouchableOpacity
-                style={styles.cancelButton}
+                style={[styles.cancelButton, { flex: 1, backgroundColor: theme.surface }]}
                 onPress={() => setShowTechnicianModal(false)}
+                disabled={isSubmitting}
               >
                 <Text style={styles.cancelButtonText}>Cancel</Text>
               </TouchableOpacity>
@@ -1844,45 +1845,29 @@ export default function CallOperatorDashboard() {
 
       {/* Call History Modal */}
       <Modal visible={showCallHistoryModal} transparent animationType="slide" onRequestClose={() => setShowCallHistoryModal(false)}>
-        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' }}>
-          <View style={{ backgroundColor: '#FFF', borderRadius: 16, padding: 24, width: 340 }}>
-            <Text style={{ fontSize: 20, fontWeight: 'bold', color: '#1E293B', marginBottom: 8 }}>Call History</Text>
-            {selectedLead && <Text style={{ color: '#64748B', marginBottom: 12 }}>Lead: {selectedLead.customer_name}</Text>}
-            <ScrollView style={{maxHeight: 300}}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { maxHeight: '80%' }]}>
+            <Text style={styles.modalTitle}>Call History</Text>
+            {selectedLead && <Text style={{ color: theme.textSecondary, marginBottom: 12 }}>Lead: {selectedLead.customer_name}</Text>}
+            <ScrollView>
               {selectedLead && getCallLogs(selectedLead.id).length > 0 ? (
                 getCallLogs(selectedLead.id).map((log: CallLog) => (
-                  <View key={log.id} style={{borderBottomWidth: 1, borderBottomColor: '#E2E8F0', paddingVertical: 8}}>
-                    <Text style={{fontSize: 14, color: '#1E293B'}}>Called by: {log.caller_name}</Text>
-                    <Text style={{fontSize: 12, color: '#64748B'}}>On: {new Date(log.created_at).toLocaleString()}</Text>
+                  <View key={log.id} style={{ borderBottomWidth: 1, borderBottomColor: theme.border, paddingVertical: 12 }}>
+                    <Text style={{ fontSize: 14, color: theme.text }}>Called by: {log.caller_name || 'Unknown'}</Text>
+                    <Text style={{ fontSize: 12, color: theme.textSecondary }}>On: {new Date(log.created_at).toLocaleString()}</Text>
+                    <Text style={{ fontSize: 12, color: theme.textSecondary }}>Notes: {log.notes || 'N/A'}</Text>
                   </View>
                 ))
               ) : (
-                <Text style={{color: '#64748B', textAlign: 'center', marginTop: 20}}>No call history found for this lead.</Text>
+                <Text style={styles.noResultsText}>No call history found for this lead.</Text>
               )}
             </ScrollView>
-            <TouchableOpacity style={{ marginTop: 16, backgroundColor: '#F1F5F9', borderRadius: 8, padding: 12, alignItems: 'center' }} onPress={() => setShowCallHistoryModal(false)}>
-              <Text style={{ color: '#64748B', fontWeight: 'bold', fontSize: 16 }}>Close</Text>
+            <TouchableOpacity style={{ marginTop: 16, backgroundColor: theme.surface, borderRadius: 8, padding: 12, alignItems: 'center' }} onPress={() => setShowCallHistoryModal(false)}>
+              <Text style={{ color: theme.textSecondary, fontWeight: 'bold', fontSize: 16 }}>Close</Text>
             </TouchableOpacity>
           </View>
         </View>
       </Modal>
-
-      {/* Logs Tab Content */}
-      {showLogsTab && selectedLogLead && (
-        <View style={{ padding: 20 }}>
-          <Text style={{ fontWeight: 'bold', fontSize: 18, marginBottom: 12 }}>Call Logs for {selectedLogLead.customer_name}</Text>
-          {getCallLogs(selectedLogLead.id).length === 0 ? (
-            <Text>No call logs found for this lead.</Text>
-          ) : (
-            getCallLogs(selectedLogLead.id).map((log, idx) => (
-              <View key={log.id || idx} style={{ marginBottom: 10, padding: 10, backgroundColor: '#F3F4F6', borderRadius: 8 }}>
-                <Text>Date: {log.created_at ? new Date(log.created_at).toLocaleString() : '-'}</Text>
-                <Text>Operator: {log.caller_name || '-'}</Text>
-              </View>
-            ))
-          )}
-        </View>
-      )}
 
       {/* WhatsApp Message Selection Modal */}
       <Modal
@@ -1894,12 +1879,9 @@ export default function CallOperatorDashboard() {
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { maxHeight: '80%' }]}>
             <Text style={styles.modalTitle}>Select WhatsApp Message</Text>
-            
-            {selectedLeadForWhatsApp && (
-              <Text style={styles.modalLabel}>
-                Customer: {selectedLeadForWhatsApp.customer_name} ({selectedLeadForWhatsApp.phone_number})
-              </Text>
-            )}
+            <Text style={styles.modalLabel}>
+              Customer: {selectedLeadForWhatsApp?.customer_name} ({selectedLeadForWhatsApp?.phone_number})
+            </Text>
 
             <View style={styles.filterContainer}>
               <Text style={styles.modalLabel}>Filter by Category:</Text>
@@ -1907,16 +1889,16 @@ export default function CallOperatorDashboard() {
                 <TouchableOpacity
                   style={[styles.filterTab, selectedCategory === 'all' && { backgroundColor: theme.primary }]}
                   onPress={() => setSelectedCategory('all')}
+                  disabled={isSubmitting}
                 >
-                  <Text style={[styles.filterTabText, selectedCategory === 'all' && { color: theme.textInverse }]}>
-                    All
-                  </Text>
+                  <Text style={[styles.filterTabText, selectedCategory === 'all' && { color: theme.textInverse }]}>All</Text>
                 </TouchableOpacity>
                 {MESSAGE_CATEGORIES.map((category) => (
                   <TouchableOpacity
                     key={category.value}
                     style={[styles.filterTab, selectedCategory === category.value && { backgroundColor: theme.primary }]}
                     onPress={() => setSelectedCategory(category.value)}
+                    disabled={isSubmitting}
                   >
                     <Text style={[styles.filterTabText, selectedCategory === category.value && { color: theme.textInverse }]}>
                       {category.label}
@@ -1933,9 +1915,11 @@ export default function CallOperatorDashboard() {
                     key={message.id}
                     style={[
                       styles.messageOption,
-                      selectedMessage?.id === message.id && { backgroundColor: theme.primaryLight, borderColor: theme.primary }
+                      selectedMessage?.id === message.id && { backgroundColor: theme.primaryLight, borderColor: theme.primary },
+                      { opacity: isSubmitting ? 0.6 : 1 }
                     ]}
                     onPress={() => setSelectedMessage(message)}
+                    disabled={isSubmitting}
                   >
                     <Text style={styles.messageTitle}>{message.title}</Text>
                     <Text style={styles.messageContent} numberOfLines={2}>
@@ -1953,19 +1937,24 @@ export default function CallOperatorDashboard() {
               )}
             </ScrollView>
 
-            <View style={styles.modalActions}>
+            <View style={[styles.modalActions, { justifyContent: 'space-between', gap: 12 }]}>
               <TouchableOpacity
-                style={styles.cancelButton}
+                style={[styles.cancelButton, { flex: 1, backgroundColor: theme.surface }]}
                 onPress={() => setShowWhatsAppModal(false)}
+                disabled={isSubmitting}
               >
                 <Text style={styles.cancelButtonText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.confirmButton, !selectedMessage && { opacity: 0.5 }]}
+                style={[styles.confirmButton, { flex: 1, opacity: (!selectedMessage || isSubmitting) ? 0.6 : 1 }]}
                 onPress={handleSendWhatsApp}
-                disabled={!selectedMessage}
+                disabled={!selectedMessage || isSubmitting}
               >
-                <Text style={styles.confirmButtonText}>Send WhatsApp</Text>
+                {isSubmitting ? (
+                  <ActivityIndicator color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.confirmButtonText}>Send WhatsApp</Text>
+                )}
               </TouchableOpacity>
             </View>
           </View>
