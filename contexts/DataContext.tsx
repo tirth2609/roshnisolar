@@ -1008,40 +1008,106 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const deleteUser = async (userId: string, reassignToUserId?: string): Promise<void> => {
+  // contexts/DataContext.tsx
+// ... (all other imports and code remain the same)
+
+const deleteUser = async (userId: string, reassignToUserId?: string): Promise<void> => {
     if (!user) {
-      Alert.alert('Error', 'User not authenticated.');
-      return;
+        Alert.alert('Error', 'User not authenticated.');
+        return;
     }
 
     try {
-      // Check if user is trying to delete themselves
-      if (userId === user.id) {
-        throw new Error('You cannot delete your own account');
-      }
+        if (userId === user.id) {
+            throw new Error('You cannot delete your own account.');
+        }
 
-      // Use the Edge Function for proper deletion with reassignment
-      const { data, error } = await supabase.functions.invoke('deleteUser', {
-        body: { userId, reassignToUserId }
-      });
+        // --- Start of client-side reassignment logic ---
+        const userLeads = leads.filter(l =>
+            l.salesman_id === userId ||
+            l.call_operator_id === userId ||
+            l.technician_id === userId
+        );
 
-      if (error) throw error;
-      
-      if (data.success) {
-        // Refresh users list
-        await fetchAppUsers();
-        // Refresh leads to get updated assignments
-        await fetchLeads();
-      } else {
-        throw new Error(data.error || 'Failed to delete user');
-      }
+        const userTickets = supportTickets.filter(t =>
+            t.technician_id === userId ||
+            t.operator_id === userId
+        );
+
+        // Prepare the leads and tickets to be reassigned
+        let leadsToReassign: { id: string, updatedData: any }[] = [];
+        let ticketsToReassign: { id: string, updatedData: any }[] = [];
+
+        if (reassignToUserId) {
+            const reassignToUser = appUsers.find(u => u.id === reassignToUserId);
+            if (!reassignToUser) {
+                throw new Error('Reassignment user not found.');
+            }
+
+            // Reassign leads
+            leadsToReassign = userLeads.map(lead => {
+                const updatedData: any = {};
+                if (lead.salesman_id === userId) {
+                    updatedData.salesman_id = reassignToUserId;
+                    updatedData.salesman_name = reassignToUser.name;
+                }
+                if (lead.call_operator_id === userId) {
+                    updatedData.call_operator_id = reassignToUserId;
+                    updatedData.call_operator_name = reassignToUser.name;
+                }
+                if (lead.technician_id === userId) {
+                    updatedData.technician_id = reassignToUserId;
+                    updatedData.technician_name = reassignToUser.name;
+                }
+                return { id: lead.id, updatedData };
+            });
+
+            // Reassign tickets
+            ticketsToReassign = userTickets.map(ticket => {
+                const updatedData: any = {};
+                if (ticket.technician_id === userId) {
+                    updatedData.technician_id = reassignToUserId;
+                }
+                if (ticket.operator_id === userId) {
+                    updatedData.operator_id = reassignToUserId;
+                }
+                return { id: ticket.id, updatedData };
+            });
+        }
+        // --- End of client-side reassignment logic ---
+
+        // Invoke the Edge Function with the pre-processed data
+        const { data, error } = await supabase.functions.invoke('deleteUser', {
+            body: {
+                userId,
+                reassignToUserId,
+                leadsToReassign,
+                ticketsToReassign
+            }
+        });
+
+        if (error) {
+            throw error;
+        }
+
+        if (data.success) {
+            await Promise.all([
+                fetchAppUsers(),
+                fetchLeads(),
+                fetchSupportTickets()
+            ]);
+            Alert.alert('Success', 'User deleted successfully!');
+        } else {
+            throw new Error(data.error || 'Failed to delete user.');
+        }
     } catch (error: any) {
-      console.error('Error deleting user:', error.message);
-      Alert.alert('Error', `Failed to delete user: ${error.message}`);
-      throw error;
+        console.error('Error deleting user:', error.message);
+        Alert.alert('Error', `Failed to delete user: ${error.message}`);
+        throw error;
     }
-  };
+};
 
+// ... (rest of the DataContext code remains the same)
   const toggleUserStatus = async (userId: string, currentStatus: boolean): Promise<void> => {
     if (!user) {
       Alert.alert('Error', 'User not authenticated.');
