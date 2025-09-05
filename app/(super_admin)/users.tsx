@@ -308,51 +308,68 @@ export default function UsersManagementScreen() {
     }
   };
 
-  const handleDeleteUser = (user: any) => {
-    // Check if user has assigned leads or tickets
+  // users.tsx
+// ... (all other imports and code remain the same)
+
+const handleDeleteUser = (user: any) => {
+    // Get leads and tickets for the user to be deleted
     const userLeads = getUserLeads(user.id);
     const userTickets = getUserTickets(user.id);
-    
+
     if (userLeads.length > 0 || userTickets.length > 0) {
-      Alert.alert(
-        'User Has Assigned Work',
-        `${user.name} has ${userLeads.length} assigned leads and ${userTickets.length} assigned tickets.\n\nWould you like to reassign their work to another user before deletion?`,
-        [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Reassign & Delete',
-            style: 'destructive',
-            onPress: () => openReassignModal(user),
-          },
-        ]
-      );
+        Alert.alert(
+            'User Has Assigned Work',
+            `${user.name} has ${userLeads.length} assigned leads and ${userTickets.length} assigned tickets.\n\nWould you like to reassign their work to another user before deletion?`,
+            [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                    text: 'Reassign & Delete',
+                    style: 'destructive',
+                    onPress: () => openReassignModal(user),
+                },
+            ]
+        );
     } else {
-      confirmDeleteUser(user);
+        confirmDeleteUser(user);
     }
-  };
+};
 
-  const confirmDeleteUser = (user: any) => {
+const confirmDeleteUser = (user: any, reassignToUserId?: string) => {
     Alert.alert(
-      'Delete User',
-      `Are you sure you want to delete ${user.name}? This action cannot be undone.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await deleteUser(user.id);
-              Alert.alert('Success', 'User deleted successfully!');
-            } catch (error) {
-              // Error is already handled in the DataContext
-            }
-          },
-        },
-      ]
+        'Delete User',
+        `Are you sure you want to delete ${user.name}? This action cannot be undone.`,
+        [
+            { text: 'Cancel', style: 'cancel' },
+            {
+                text: 'Delete',
+                style: 'destructive',
+                onPress: async () => {
+                    try {
+                        await deleteUser(user.id, reassignToUserId);
+                    } catch (error) {
+                        // Error is handled by the DataContext
+                    }
+                },
+            },
+        ]
     );
-  };
+};
 
+
+const handleReassignAndDelete = async (reassignToUserId: string) => {
+    if (!selectedUser) return;
+    try {
+        await deleteUser(selectedUser.id, reassignToUserId);
+        setShowReassignModal(false);
+        setSelectedUser(null);
+        Alert.alert('Success', 'User deleted and work reassigned successfully!');
+    } catch (error) {
+        // Error is already handled in the DataContext
+    }
+};
+
+// ... (rest of the component and JSX remain the same)
+  
   const openReassignModal = (user: any) => {
     // Find suitable users for reassignment based on role
     const suitableUsers = getActiveUsers().filter(u => 
@@ -378,18 +395,6 @@ export default function UsersManagementScreen() {
     setShowReassignModal(true);
   };
 
-  const handleReassignAndDelete = async (reassignToUserId: string) => {
-    if (!selectedUser) return;
-
-    try {
-      await deleteUser(selectedUser.id, reassignToUserId);
-      setShowReassignModal(false);
-      setSelectedUser(null);
-      Alert.alert('Success', 'User deleted and work reassigned successfully!');
-    } catch (error) {
-      // Error is already handled in the DataContext
-    }
-  };
 
   const handleToggleUserStatus = async (user: any) => {
     try {
