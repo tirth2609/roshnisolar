@@ -115,29 +115,46 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const { user, isAuthenticated, signOut } = useAuth();
 
   // Function to fetch all leads from Supabase
+  // contexts/DataContext.tsx
+
+  // Function to fetch all leads from Supabase
   const fetchLeads = async () => {
     try {
-      // FIXED: Super admins can always fetch data, regular users need to be active
+      // Super admins can always fetch data, regular users need to be active
       if (user && !user.isActive && user.role !== 'super_admin') {
         console.log('❌ User is deactivated and not super admin, cannot fetch leads');
+        setLeads([]); // Clear leads for deactivated user
         return;
       }
 
-      console.log('🔍 Fetching leads from Supabase with RLS security...');
+      console.log('🔍 Fetching leads from Supabase...');
       console.log('👤 User:', user?.email, 'Role:', user?.role, 'Active:', user?.isActive);
       
-      // Use direct Supabase query - RLS policies will handle security automatically
-      const { data, error } = await supabase
+      // Start building the query
+      let query = supabase
         .from('leads')
-        .select('*')
-        .order('created_at', { ascending: false });
+        .select('*');
+
+      // Apply role-based filtering for non-admin/team-lead users
+      if (user && user.role !== 'super_admin' && user.role !== 'team_lead') {
+        console.log(`Applying filter for role: ${user.role}. Fetching leads assigned to user ID: ${user.id}`);
+        // Fetch leads where the user is either the salesman, call operator, or technician
+        query = query.or(
+          `salesman_id.eq.${user.id},call_operator_id.eq.${user.id},technician_id.eq.${user.id}`
+        );
+      } else {
+        console.log('User is super_admin or team_lead, fetching all leads.');
+      }
+      
+      // Execute the final query with ordering
+      const { data, error } = await query.order('created_at', { ascending: false });
 
       if (error) {
         console.error('❌ Error fetching leads:', error);
         throw error;
       }
 
-      console.log('✅ Leads fetched successfully with RLS security:', data?.length || 0, 'leads found');
+      console.log('✅ Leads fetched successfully:', data?.length || 0, 'leads found');
       
       // Map snake_case fields to match the updated Lead interface
       const mappedLeads = (data || []).map((lead: any) => ({
@@ -175,7 +192,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       }));
       setLeads(mappedLeads);
     } catch (error: any) {
-      console.error('❌ Error fetching leads:', error.message);
+      console.error('❌ Error in fetchLeads function:', error.message);
       Alert.alert('Error', 'Failed to fetch leads. Please check your connection.');
     }
   };
