@@ -13,7 +13,8 @@ import {
   Dimensions,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Plus, MapPin, Phone, User, Building, Home, Briefcase, Factory, TrendingUp, CheckCircle } from 'lucide-react-native';
+// Replaced Factory with Droplet for the new option
+import { Plus, MapPin, Phone, User, Building, Home, Briefcase, Droplet, TrendingUp, CheckCircle } from 'lucide-react-native';
 import { useData } from '@/contexts/DataContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -95,14 +96,15 @@ export default function NewLeadScreen() {
     }
   };
 
+  // Updated function to handle the new 'water_heater' type
   const getPropertyIcon = (property_type: PropertyType) => {
     switch (property_type) {
       case 'residential':
         return <Home size={20} color={theme.primary} />;
       case 'commercial':
         return <Briefcase size={20} color={theme.primary} />;
-      case 'industrial':
-        return <Factory size={20} color={theme.primary} />;
+      case 'water_heater': // Changed from 'industrial'
+        return <Droplet size={20} color={theme.primary} />; // Changed icon
       default:
         return <Home size={20} color={theme.primary} />;
     }
@@ -238,7 +240,8 @@ export default function NewLeadScreen() {
                   {[
                     { value: 'residential', label: 'Residential', icon: '🏠', description: 'Home & Apartment' },
                     { value: 'commercial', label: 'Commercial', icon: '🏢', description: 'Office & Retail' },
-                    { value: 'industrial', label: 'Industrial', icon: '🏭', description: 'Factory & Warehouse' },
+                    // Changed the 'industrial' option to 'water_heater'
+                    { value: 'water_heater', label: 'Water Heater', icon: '🚿', description: 'Heating Solutions' },
                   ].map((option) => (
                     <TouchableOpacity
                       key={option.value}

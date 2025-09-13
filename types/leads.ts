@@ -1,7 +1,7 @@
 // types/leads.ts
 export type LeadStatus = 'new' | 'ringing' | 'contacted' | 'hold' | 'transit' | 'declined' | 'completed';
 export type LeadLikelihood = 'hot' | 'warm' | 'cold';
-export type PropertyType = 'residential' | 'commercial' | 'industrial';
+export type PropertyType = 'residential' | 'commercial' | 'water_heater';
 
 export interface Lead {
   id: string;

@@ -14,7 +14,7 @@ export interface Customer {
   phone_number: string;
   email?: string;
   address: string;
-  property_type: 'residential' | 'commercial' | 'industrial';
+  property_type: 'residential' | 'commercial' | 'water_heater';
   lead_id: string; // Reference to the original lead
   converted_at: string; // When the lead was converted to customer
   status: 'active' | 'inactive';
@@ -52,7 +52,7 @@ export interface NewCustomerData {
   phone_number: string;
   email?: string;
   address: string;
-  property_type: 'residential' | 'commercial' | 'industrial';
+  property_type: 'residential' | 'commercial' | 'water_heater';
   lead_id: string;
   notes?: string;
   

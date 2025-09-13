@@ -1520,8 +1520,8 @@ const deleteUser = async (userId: string, reassignToUserId?: string): Promise<vo
         case 'commercial':
           prefix = 'CO';
           break;
-        case 'industrial':
-          prefix = 'IN';
+        case 'water_heater':
+          prefix = 'WH';
           break;
         default:
           prefix = 'CU';
