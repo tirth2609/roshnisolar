@@ -274,7 +274,7 @@ export default function CreateLeadScreen() {
                   {[
                     { value: 'residential', label: 'Residential', icon: '🏠', description: 'Home & Apartment' },
                     { value: 'commercial', label: 'Commercial', icon: '🏢', description: 'Office & Retail' },
-                    { value: 'water_heater', label: 'Water Heater', icon: '🏭', description: 'Factory & Warehouse' },
+                    { value: 'water_heater', label: 'Water Heater', icon: '🚿', description: 'Factory & Warehouse' },
                   ].map((option) => (
                     <TouchableOpacity
                       key={option.value}
